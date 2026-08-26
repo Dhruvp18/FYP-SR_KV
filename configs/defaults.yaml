@@ -1,0 +1,24 @@
+# Frozen defaults for every SR-KV run.
+#
+# eval/run.py reads this file; an explicit CLI flag always wins over it.
+#
+# rope_position_mode is the one value here that is meant to be decided by
+# EXPERIMENT, not by taste: Phase 4 sweeps all three conventions on NIAH and
+# `scripts/freeze_rope_mode.py` rewrites this file with the winner and flips
+# rope_position_mode_frozen to true. Until that has happened, the value below
+# is a placeholder and every SR-KV number produced with it is provisional.
+rope_position_mode: attn_weighted
+rope_position_mode_frozen: false
+rope_position_mode_evidence: "not yet measured - run Phase 4"
+
+# scoring
+alpha: 1.0
+beta: 0.3
+lam: 0.001
+obs_window: 32
+pool_kernel: 7
+
+# structure
+n_sink: 4
+centroid_frac: 0.125
+cluster_mode: kmeans
