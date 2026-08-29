@@ -1,0 +1,18 @@
+# SR-KV — pinned to the transformers 5.x Cache/attention-interface API.
+# The cache classes subclass DynamicCache and register a custom entry in
+# ALL_ATTENTION_FUNCTIONS; both are 5.x APIs. Do not downgrade below 5.0
+# without updating src/compat.py.
+torch>=2.4
+transformers>=5.0
+accelerate>=1.0
+datasets>=3.0
+bitsandbytes>=0.43 ; platform_system != "Darwin"
+sentencepiece
+protobuf
+pyyaml
+numpy
+matplotlib
+tqdm
+pytest
+# optional experiment tracking; eval/run.py works without it
+wandb

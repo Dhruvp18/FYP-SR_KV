@@ -1,0 +1,13 @@
+{
+  "id": "dhruvp18/sr-kv-phase1",
+  "title": "SR-KV Phase 1 - harness sanity",
+  "code_file": "sr-kv-phase1.ipynb",
+  "language": "python",
+  "kernel_type": "notebook",
+  "is_private": true,
+  "enable_gpu": true,
+  "enable_internet": true,
+  "dataset_sources": [],
+  "competition_sources": [],
+  "kernel_sources": []
+}

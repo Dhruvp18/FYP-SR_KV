@@ -1,0 +1,16 @@
+__pycache__/
+*.pyc
+.pytest_cache/
+.ipynb_checkpoints/
+*.egg-info/
+
+# Figures are regenerable from results/ in one command (make report_artifacts).
+figures/
+
+# results/ is deliberately NOT ignored: committing results is how work survives
+# a killed Kaggle session. Clone the repo in the next session and eval/run.py
+# resumes from the .jsonl files that came with it.
+
+# generated Kaggle kernel dirs are committed (they are small and useful to
+# the agent); their pulled outputs are not
+.kaggle_output/

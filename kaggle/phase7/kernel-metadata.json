@@ -1,0 +1,20 @@
+{
+  "id": "dhruvp18/sr-kv-phase7",
+  "title": "SR-KV Phase 7 - figures",
+  "code_file": "sr-kv-phase7.ipynb",
+  "language": "python",
+  "kernel_type": "notebook",
+  "is_private": true,
+  "enable_gpu": false,
+  "enable_internet": true,
+  "dataset_sources": [],
+  "competition_sources": [],
+  "kernel_sources": [
+    "dhruvp18/sr-kv-phase1",
+    "dhruvp18/sr-kv-phase2",
+    "dhruvp18/sr-kv-phase3",
+    "dhruvp18/sr-kv-phase4",
+    "dhruvp18/sr-kv-phase5",
+    "dhruvp18/sr-kv-phase6"
+  ]
+}
