@@ -164,10 +164,14 @@ difficulty. Check the prompt formatting first (`eval/memory.py::build_prompt`).
 Exercise the 4-bit path at least once, so the fallback is known to work:
 
 ```bash
-python eval/run.py --method full --model llama3.2-3b --precision 4bit \
+python eval/run.py --method full --model qwen2.5-3b --precision 4bit \
   --task niah --context_len 512 --depths 50 --n_samples 3 \
   --output results/phase1_4bit.json
 ```
+
+(`--model llama3.2-3b` also works once you've accepted Meta's license at
+huggingface.co and set `HF_TOKEN` - see `src/models.py` for why it isn't the
+default.)
 
 ### Phase 2 - baselines behave the way the papers say
 

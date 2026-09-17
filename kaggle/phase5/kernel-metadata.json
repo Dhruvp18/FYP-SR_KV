@@ -1,6 +1,6 @@
 {
   "id": "dhruvp18/sr-kv-phase5",
-  "title": "SR-KV Phase 5 - factorial matrix + LongBench",
+  "title": "sr-kv-phase5",
   "code_file": "sr-kv-phase5.ipynb",
   "language": "python",
   "kernel_type": "notebook",

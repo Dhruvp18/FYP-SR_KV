@@ -1,6 +1,6 @@
 {
   "id": "dhruvp18/sr-kv-phase6",
-  "title": "SR-KV Phase 6 - hyperparameter sweep + 3B transfer",
+  "title": "sr-kv-phase6",
   "code_file": "sr-kv-phase6.ipynb",
   "language": "python",
   "kernel_type": "notebook",

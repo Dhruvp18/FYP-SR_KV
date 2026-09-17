@@ -380,7 +380,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--repo", default=DEFAULT_REPO)
     parser.add_argument("--out", default=str(REPO_ROOT / "kaggle"))
     parser.add_argument("--model", default="qwen2.5-1.5b")
-    parser.add_argument("--model3b", default="llama3.2-3b")
+    # qwen2.5-3b, not llama3.2-3b: ungated and RoPE-compatible with centroid
+    # merging (see the comment on Makefile's MODEL3B). Pass
+    # --model3b llama3.2-3b to restore the cross-architecture comparison
+    # once HF access to the gated repo is in place.
+    parser.add_argument("--model3b", default="qwen2.5-3b")
     parser.add_argument("--budget", type=float, default=0.3)
     parser.add_argument("--samples", type=int, default=3)
     parser.add_argument("--shard", type=int, default=0)

@@ -1,6 +1,6 @@
 {
   "id": "dhruvp18/sr-kv-phase4",
-  "title": "SR-KV Phase 4 - RoPE position ablation",
+  "title": "sr-kv-phase4",
   "code_file": "sr-kv-phase4.ipynb",
   "language": "python",
   "kernel_type": "notebook",

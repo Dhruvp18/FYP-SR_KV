@@ -1,6 +1,6 @@
 {
   "id": "dhruvp18/sr-kv-phase1",
-  "title": "SR-KV Phase 1 - harness sanity",
+  "title": "sr-kv-phase1",
   "code_file": "sr-kv-phase1.ipynb",
   "language": "python",
   "kernel_type": "notebook",

@@ -7,7 +7,14 @@
 
 PY      ?= python
 MODEL   ?= qwen2.5-1.5b
-MODEL3B ?= llama3.2-3b
+# qwen2.5-3b, not llama3.2-3b: Llama-3.2 is gated on HF and blocks on manual
+# access; Qwen2.5-3B is ungated, its RoPE is length-independent (safe for
+# centroid re-rotation, unlike most other long-context checkpoints), and it
+# natively covers the 16k context the sweeps need. Trade-off: Phase 6 then
+# shows generalization across scale within the Qwen family rather than across
+# architectures. Set MODEL3B=llama3.2-3b to restore the original comparison
+# once HF access lands.
+MODEL3B ?= qwen2.5-3b
 BUDGET  ?= 0.3
 SAMPLES ?= 3
 RESULTS ?= results

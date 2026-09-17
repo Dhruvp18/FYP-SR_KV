@@ -128,9 +128,14 @@ modes come out at chance.
 
 ## Scope, stated plainly
 
-**In scope**: Qwen2.5-1.5B-Instruct and Llama-3.2-3B-Instruct (bf16, or 4-bit
+**In scope**: Qwen2.5-1.5B-Instruct and Qwen2.5-3B-Instruct (bf16, or 4-bit
 where VRAM demands it), contexts up to 8k–16k, a 3–4 task LongBench subset,
-single-needle NIAH with a depth sweep.
+single-needle NIAH with a depth sweep. The 3B model was originally
+Llama-3.2-3B-Instruct, for a cross-architecture generalization test in Phase
+6; it's gated on HF and, separately, not RoPE-compatible with most other
+long-context checkpoints (see `Makefile`'s `MODEL3B` comment), so Qwen2.5-3B
+is the default until HF access is in place. `llama3.2-3b` remains a supported
+`--model` alias for whenever that changes.
 
 **Out of scope**, deliberately: 7B+ models, 32k+ contexts, multi-needle NIAH,
 vLLM/production serving integration, and a full H2O reproduction. H2O needs

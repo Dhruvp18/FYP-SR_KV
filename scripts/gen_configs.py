@@ -15,7 +15,9 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
-MODELS = ["qwen2.5-1.5b", "qwen2.5-0.5b", "llama3.2-3b"]
+# qwen2.5-3b, not llama3.2-3b: ungated and RoPE-compatible with centroid
+# merging (see Makefile's MODEL3B comment for why).
+MODELS = ["qwen2.5-1.5b", "qwen2.5-0.5b", "qwen2.5-3b"]
 METHODS = ["full", "streaming_llm", "snapkv_unified", "centroid_merge", "sr_kv"]
 BUDGETS = [0.1, 0.2, 0.3, 0.5]
 CONTEXT_LENGTHS = [2048, 4096, 8192, 16384]

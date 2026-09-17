@@ -29,6 +29,14 @@ MODEL_ALIASES = {
     "qwen2.5-1.5b": "Qwen/Qwen2.5-1.5B-Instruct",
     "qwen2.5-3b": "Qwen/Qwen2.5-3B-Instruct",
     "qwen2.5-7b": "Qwen/Qwen2.5-7B-Instruct",
+    # gated on HF (needs an accepted license + HF_TOKEN). Also NOT a safe
+    # drop-in for any other long-context model: llama3.2's rope_type is
+    # explicitly the length-independent kind rope_positions.py requires
+    # (CLAUDE.md A5), which is why it was originally chosen as the "transfer"
+    # model - most other long-context checkpoints use a length-dependent
+    # scheme (YaRN/LongRoPE/dynamic NTK) that RopeHelper.from_model() rejects.
+    # microsoft/Phi-3.5-mini-instruct was considered and ruled out for this
+    # reason (rope_scaling.type == "longrope").
     "llama3.2-1b": "meta-llama/Llama-3.2-1B-Instruct",
     "llama3.2-3b": "meta-llama/Llama-3.2-3B-Instruct",
 }
