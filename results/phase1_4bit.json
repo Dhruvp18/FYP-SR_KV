@@ -1,0 +1,216 @@
+{
+  "metadata": {
+    "argv": [
+      "eval/run.py",
+      "--method",
+      "full",
+      "--model",
+      "qwen2.5-3b",
+      "--precision",
+      "4bit",
+      "--task",
+      "niah",
+      "--context_len",
+      "512",
+      "--depths",
+      "50",
+      "--n_samples",
+      "3",
+      "--max_new_tokens",
+      "16",
+      "--output",
+      "results/phase1_4bit.json"
+    ],
+    "args": {
+      "method": [
+        "full"
+      ],
+      "model": "qwen2.5-3b",
+      "task": "niah",
+      "context_len": [
+        512
+      ],
+      "budget": [
+        0.3
+      ],
+      "output": "results/phase1_4bit.json",
+      "config": null,
+      "depths": [
+        50
+      ],
+      "n_samples": 3,
+      "niah_corpus": "synthetic",
+      "longbench_tasks": [
+        "narrativeqa",
+        "qasper",
+        "gov_report",
+        "triviaqa"
+      ],
+      "max_new_tokens": 16,
+      "rope_position_mode": null,
+      "alpha": null,
+      "beta": null,
+      "lam": null,
+      "obs_window": null,
+      "pool_kernel": null,
+      "n_centroids": null,
+      "centroid_frac": null,
+      "cluster_mode": null,
+      "n_sink": null,
+      "precision": "4bit",
+      "shard": 0,
+      "num_shards": 1,
+      "limit": null,
+      "seed": 1234,
+      "allow_cpu": false,
+      "tiny": false,
+      "continue_on_oom": false
+    },
+    "torch": "2.10.0+cu128",
+    "cuda": "Tesla T4",
+    "platform": "Linux-6.12.90+-x86_64-with-glibc2.35",
+    "timestamp": "2026-09-17T15:44:01"
+  },
+  "summary": {
+    "full|budget=0.3|512": {
+      "n": 3,
+      "accuracy": 1.0,
+      "max_memory_allocated": 2179196928,
+      "tokens_per_sec": 3.324442931479141,
+      "n_tokens_cached": 567,
+      "budget_used_pct_max": 100.0
+    }
+  },
+  "n_records": 3,
+  "records": [
+    {
+      "method": "full",
+      "budget": 0.3,
+      "context_len": 512,
+      "depth": 50,
+      "sample_idx": 0,
+      "task_id": "niah/ctx512/depth50/s0",
+      "alpha": 1.0,
+      "beta": 0.3,
+      "lam": 0.001,
+      "obs_window": 32,
+      "pool_kernel": 7,
+      "centroid_frac": 0.125,
+      "cluster_mode": "kmeans",
+      "n_sink": 4,
+      "rope_position_mode": "attn_weighted",
+      "run_key": "0b13f43d28a2",
+      "model": "qwen2.5-3b",
+      "precision": "4bit",
+      "accuracy": 1.0,
+      "prompt_tokens": 561,
+      "generated_tokens": 7,
+      "seconds": 2.9699169440000333,
+      "tokens_per_sec": 2.356968269480307,
+      "max_memory_allocated": 2179196928,
+      "memory_allocated_delta": 114197504,
+      "cache_stats": {
+        "n_tokens_cached": 567,
+        "n_tokens_evicted": 0,
+        "n_centroids": 0,
+        "budget_used_pct": 100.0
+      },
+      "budget_used_pct_max": 100.0,
+      "budget_used_pct_final": 100.0,
+      "conservation_ok": true,
+      "cache_config": {
+        "method": "full",
+        "budget": 1.0,
+        "budget_tokens": null,
+        "max_capacity": null
+      },
+      "generated_text": "848472"
+    },
+    {
+      "method": "full",
+      "budget": 0.3,
+      "context_len": 512,
+      "depth": 50,
+      "sample_idx": 1,
+      "task_id": "niah/ctx512/depth50/s1",
+      "alpha": 1.0,
+      "beta": 0.3,
+      "lam": 0.001,
+      "obs_window": 32,
+      "pool_kernel": 7,
+      "centroid_frac": 0.125,
+      "cluster_mode": "kmeans",
+      "n_sink": 4,
+      "rope_position_mode": "attn_weighted",
+      "run_key": "0b13f43d28a2",
+      "model": "qwen2.5-3b",
+      "precision": "4bit",
+      "accuracy": 1.0,
+      "prompt_tokens": 561,
+      "generated_tokens": 7,
+      "seconds": 1.8401100959999894,
+      "tokens_per_sec": 3.8041202073813523,
+      "max_memory_allocated": 2179196928,
+      "memory_allocated_delta": 104629248,
+      "cache_stats": {
+        "n_tokens_cached": 567,
+        "n_tokens_evicted": 0,
+        "n_centroids": 0,
+        "budget_used_pct": 100.0
+      },
+      "budget_used_pct_max": 100.0,
+      "budget_used_pct_final": 100.0,
+      "conservation_ok": true,
+      "cache_config": {
+        "method": "full",
+        "budget": 1.0,
+        "budget_tokens": null,
+        "max_capacity": null
+      },
+      "generated_text": "441086"
+    },
+    {
+      "method": "full",
+      "budget": 0.3,
+      "context_len": 512,
+      "depth": 50,
+      "sample_idx": 2,
+      "task_id": "niah/ctx512/depth50/s2",
+      "alpha": 1.0,
+      "beta": 0.3,
+      "lam": 0.001,
+      "obs_window": 32,
+      "pool_kernel": 7,
+      "centroid_frac": 0.125,
+      "cluster_mode": "kmeans",
+      "n_sink": 4,
+      "rope_position_mode": "attn_weighted",
+      "run_key": "0b13f43d28a2",
+      "model": "qwen2.5-3b",
+      "precision": "4bit",
+      "accuracy": 1.0,
+      "prompt_tokens": 561,
+      "generated_tokens": 7,
+      "seconds": 1.836190643000009,
+      "tokens_per_sec": 3.8122403175757635,
+      "max_memory_allocated": 2179196928,
+      "memory_allocated_delta": 104629248,
+      "cache_stats": {
+        "n_tokens_cached": 567,
+        "n_tokens_evicted": 0,
+        "n_centroids": 0,
+        "budget_used_pct": 100.0
+      },
+      "budget_used_pct_max": 100.0,
+      "budget_used_pct_final": 100.0,
+      "conservation_ok": true,
+      "cache_config": {
+        "method": "full",
+        "budget": 1.0,
+        "budget_tokens": null,
+        "max_capacity": null
+      },
+      "generated_text": "279331"
+    }
+  ]
+}
