@@ -108,12 +108,12 @@ python scripts/check_results.py gate --phase 5 --model qwen2.5-1.5b
 | Phase | State |
 |---|---|
 | 0 — scaffolding, contract | complete |
-| 1 — model loading, no-op cache, eval harness | code complete; CPU-verified. GPU sanity run pending |
-| 2 — StreamingLLM + SnapKV baselines | code complete; budget/conservation verified. GPU trend check pending |
-| 3 — scoring, clustering, RoPE modes, unified `SRKVCache` | code complete; all unit + equivalence tests pass |
-| 4 — RoPE position ablation | needs GPU. `make phase4` then `make freeze-rope` |
-| 5 — factorial matrix + full sweep | needs GPU. `make phase5` |
-| 6 — hyperparameter sweep + 3B transfer | needs GPU. `make phase6-sweep phase6-3b` |
+| 1 — model loading, no-op cache, eval harness | **PASS on real GPU**: 1.000 accuracy, bf16 + 4-bit |
+| 2 — StreamingLLM + SnapKV baselines | **PASS on real GPU**: expected StreamingLLM/SnapKV split at mid-depths |
+| 3 — scoring, clustering, RoPE modes, unified `SRKVCache` | **PASS on real GPU**: conservation + budget hold at 8k, centroids verified |
+| 4 — RoPE position ablation | **in progress** — see `HANDOFF.md` "READ THIS FIRST" for the full story (two rejected sweeps, a budget scan, a full-power run underway) |
+| 5 — factorial matrix + full sweep | not started; see `HANDOFF.md` for why LongBench should run before the full NIAH grid |
+| 6 — hyperparameter sweep + 3B transfer | not started (transfer model is now `qwen2.5-3b`, not the gated `llama3.2-3b`) |
 | 7 — figures | code complete; `make phase7` runs against real results |
 
 Every phase from 1 on runs on Kaggle via
