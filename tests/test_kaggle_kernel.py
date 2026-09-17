@@ -143,8 +143,11 @@ def test_kaggle_argv_shapes():
         "kaggle", "kernels", "status", "u/sr-kv-phase3",
     ]
     out_dir = Path("out")
+    # --force matters: without it the CLI keeps any local file that looks
+    # newer, so re-running a phase silently re-serves the previous run's
+    # results and the gate scores data the run never produced.
     assert kaggle_argv("pull", phase=3, user="u", out_dir=out_dir) == [
-        "kaggle", "kernels", "output", "u/sr-kv-phase3", "-p", str(out_dir),
+        "kaggle", "kernels", "output", "u/sr-kv-phase3", "-p", str(out_dir), "--force",
     ]
     with pytest.raises(ValueError):
         kaggle_argv("delete", phase=1)
@@ -267,6 +270,55 @@ def test_gate4_refuses_to_anoint_a_winner_at_chance():
     ]
     code, lines = gate_phase4(separated, model="m")
     assert code == 0 and any("winner: earliest" in line for line in lines)
+
+
+def test_gate4_refuses_a_winner_that_is_one_flipped_sample():
+    """A 0.04 "spread" at n=25 is one record, not a result.
+
+    This is the real Phase 4 outcome at budget=0.1 (7/25, 6/25, 7/25). The
+    mean alone reads as a clean win for `latest`; Fisher exact gives p=1.0.
+    Freezing it would write a coin flip into configs/defaults.yaml, which
+    every later phase then inherits.
+    """
+    records = []
+    for mode, n_correct in (("latest", 7), ("earliest", 6), ("attn_weighted", 7)):
+        for i in range(25):
+            records.append(_niah("sr_kv", 1.0 if i < n_correct else 0.0,
+                                 depth=i % 5, rope_position_mode=mode))
+    code, lines = gate_phase4(records, model="m")
+    assert code == 2, "a one-record difference must not pass as a measured winner"
+    assert any("NO SIGNIFICANT DIFFERENCE" in line for line in lines)
+    assert any("p=1.000" in line for line in lines)
+
+
+def test_gate4_accepts_a_difference_that_is_actually_significant():
+    records = []
+    for mode, n_correct in (("latest", 24), ("earliest", 4), ("attn_weighted", 5)):
+        for i in range(25):
+            records.append(_niah("sr_kv", 1.0 if i < n_correct else 0.0,
+                                 depth=i % 5, rope_position_mode=mode))
+    code, lines = gate_phase4(records, model="m")
+    assert code == 0
+    assert any("winner: latest" in line for line in lines)
+
+
+def test_gate4_refuses_to_average_across_budgets():
+    """Two budgets in results/ are two experiments, not one bigger sample.
+
+    Mixing a saturated budget=0.3 sweep into a budget=0.1 sweep changed which
+    mode `max()` picked, purely from which files were on disk.
+    """
+    records = []
+    for mode in ("latest", "earliest", "attn_weighted"):
+        for i in range(5):
+            records.append(_niah("sr_kv", 1.0, depth=i, rope_position_mode=mode, budget=0.3))
+            records.append(_niah("sr_kv", 0.0, depth=i, rope_position_mode=mode, budget=0.1))
+    code, lines = gate_phase4(records, model="m")
+    assert code == 1
+    assert any("refusing to aggregate across budgets" in line for line in lines)
+    # naming one budget resolves it
+    code_one, _ = gate_phase4(records, model="m", budgets=[0.3])
+    assert code_one != 1
 
 
 def test_gate4_notes_when_the_modes_are_indistinguishable():

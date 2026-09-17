@@ -52,6 +52,50 @@ def _mean(values) -> float:
     return sum(values) / len(values) if values else float("nan")
 
 
+def binary_counts(values) -> tuple[int, int] | None:
+    """``(n_correct, n)`` when every value is 0.0/1.0, else None.
+
+    NIAH is exact-match, so its accuracies are binary and a proper
+    significance test applies. LongBench F1/ROUGE are continuous and need a
+    different test, so callers fall back to reporting the spread for those.
+    """
+    values = list(values)
+    if values and all(v in (0.0, 1.0) for v in values):
+        return int(sum(values)), len(values)
+    return None
+
+
+def fisher_exact_2x2(a: int, b: int, c: int, d: int) -> float:
+    """Two-sided Fisher exact p-value for [[a, b], [c, d]]. No scipy needed.
+
+    Used to answer the question the mean on its own cannot: is the gap
+    between the best and worst mode bigger than sampling noise at this
+    sample size? With n=25 per arm, one flipped record moves the mean by
+    0.04, so an "0.04 spread" can be a single sample and nothing more.
+    """
+    from math import comb
+
+    n = a + b + c + d
+    row1, row2, col1 = a + b, c + d, a + c
+    if min(row1, row2, col1, n - col1) < 0 or n == 0:
+        return 1.0
+
+    def prob(x: int) -> float:
+        return comb(row1, x) * comb(row2, col1 - x) / comb(n, col1)
+
+    observed = prob(a)
+    total = sum(
+        prob(x)
+        for x in range(max(0, col1 - row2), min(row1, col1) + 1)
+        if prob(x) <= observed + 1e-12
+    )
+    return min(total, 1.0)
+
+
+#: a difference this likely under the null is not a result worth freezing
+SIGNIFICANCE_ALPHA = 0.05
+
+
 def _rows(records, **match):
     return [r for r in records if all(r.get(k) == v for k, v in match.items() if v is not None)]
 
@@ -187,21 +231,41 @@ def gate_phase3(records, *, model) -> tuple[int, list[str]]:
     return 0, lines + ["PASS: conservation held and the budget was never exceeded"]
 
 
-def gate_phase4(records, *, model) -> tuple[int, list[str]]:
-    """All three conventions ran, and at least one is above chance."""
+def gate_phase4(records, *, model, budgets=None) -> tuple[int, list[str]]:
+    """All three conventions ran, and the best one beats the worst by more than noise."""
+    rows = [
+        r for r in records
+        if r.get("method") in ("sr_kv", "centroid_merge") and r.get("rope_position_mode")
+        and (not model or r.get("model") == model) and "error" not in r
+    ]
+
+    # Different budgets are different experiments. Averaging a saturated
+    # budget=0.3 sweep (every record 1.0) together with a budget=0.1 sweep
+    # produces a blended number that describes neither, and silently changes
+    # which mode "wins" depending on what happens to be sitting in results/.
+    present = sorted({r.get("budget") for r in rows}, key=lambda b: (b is None, b))
+    if budgets:
+        rows = [r for r in rows if r.get("budget") in set(budgets)]
+        present = sorted({r.get("budget") for r in rows}, key=lambda b: (b is None, b))
+    if len(present) > 1:
+        return 1, [
+            f"refusing to aggregate across budgets {present}: these are separate experiments, "
+            "and averaging them changes which mode appears to win. Re-run with "
+            f"--budget {present[0]} (repeatable) to pick one."
+        ]
+
     scores: dict[str, list[float]] = defaultdict(list)
-    for r in records:
-        if r.get("method") in ("sr_kv", "centroid_merge") and r.get("rope_position_mode"):
-            if (not model or r.get("model") == model) and "error" not in r:
-                scores[r["rope_position_mode"]].append(r["accuracy"])
+    for r in rows:
+        scores[r["rope_position_mode"]].append(r["accuracy"])
 
     missing = [m for m in POSITION_MODES if not scores.get(m)]
     if missing:
         return 1, [f"missing results for mode(s) {missing}; run `make phase4`."]
 
     means = {m: _mean(scores[m]) for m in POSITION_MODES}
-    lines = [", ".join(f"{m}={means[m]:.3f}" for m in POSITION_MODES)]
+    lines = [f"budget={present[0]}: " + ", ".join(f"{m}={means[m]:.3f}" for m in POSITION_MODES)]
     best = max(means, key=means.get)
+    worst = min(means, key=means.get)
     if means[best] <= CHANCE_CEILING:
         lines.append(
             "FAIL: every mode is at or below chance. Three modes collapsing together points at "
@@ -209,6 +273,26 @@ def gate_phase4(records, *, model) -> tuple[int, list[str]]:
             "before freezing a winner - otherwise you freeze noise."
         )
         return 1, lines
+
+    # Is the gap real, or one flipped sample? At n=25 a single record moves a
+    # mean by 0.04, so a bare spread cannot answer that on its own.
+    cb, cw = binary_counts(scores[best]), binary_counts(scores[worst])
+    if cb and cw and best != worst:
+        p = fisher_exact_2x2(cb[0], cb[1] - cb[0], cw[0], cw[1] - cw[0])
+        lines.append(
+            f"best={best} ({cb[0]}/{cb[1]}) vs worst={worst} ({cw[0]}/{cw[1]}): "
+            f"Fisher exact p={p:.3f}"
+        )
+        if p >= SIGNIFICANCE_ALPHA:
+            lines.append(
+                f"NO SIGNIFICANT DIFFERENCE (p={p:.3f} >= {SIGNIFICANCE_ALPHA}). The modes are "
+                "not distinguishable at this sample size, so there is no measured winner to "
+                "freeze. Either raise --n_samples until the comparison has power, or move the "
+                "budget to where accuracy is mid-range (a sweep saturated at 1.0 or floored "
+                "near 0 cannot separate the conventions), or pick a default on principled "
+                "grounds and document it as 'not empirically distinguished'."
+            )
+            return 2, lines
 
     spread = means[best] - min(means.values())
     lines.append(f"winner: {best} (spread across modes {spread:.3f})")
@@ -310,7 +394,15 @@ GATES = {1: "harness sanity", 2: "baseline failure patterns", 3: "8k invariants"
          4: "RoPE ablation", 5: "factorial matrix", 6: "3B transfer", 7: "figures"}
 
 
-def run_gate(phase: int, records, *, model, budgets, n_samples, figures_dir):
+def run_gate(phase: int, records, *, model, budgets, n_samples, figures_dir,
+             explicit_budgets=None):
+    """`explicit_budgets` is what the user actually typed, or None.
+
+    Phase 4 needs that distinction: the other gates are happy with the [0.3]
+    default, but silently filtering a RoPE sweep to a budget nobody asked for
+    would hide the whole sweep. It auto-detects instead, and only refuses when
+    more than one budget is genuinely present.
+    """
     if phase == 1:
         return gate_phase1(records, model=model)
     if phase == 2:
@@ -318,7 +410,7 @@ def run_gate(phase: int, records, *, model, budgets, n_samples, figures_dir):
     if phase == 3:
         return gate_phase3(records, model=model)
     if phase == 4:
-        return gate_phase4(records, model=model)
+        return gate_phase4(records, model=model, budgets=explicit_budgets)
     if phase == 5:
         return gate_phase5(records, model=model, budgets=budgets, n_samples=n_samples)
     if phase == 6:
@@ -357,6 +449,7 @@ def main(argv=None) -> int:
             budgets=args.budget or [0.3],
             n_samples=args.n_samples,
             figures_dir=Path(args.figures_dir),
+            explicit_budgets=args.budget,
         )
         print(f"\n=== PHASE {args.phase} GATE ({GATES.get(args.phase, '?')}) ===")
         for line in lines:

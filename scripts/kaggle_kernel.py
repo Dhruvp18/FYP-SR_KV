@@ -240,7 +240,13 @@ def kaggle_argv(action: str, *, phase: int, user: str | None = None,
     if action == "status":
         return ["kaggle", "kernels", "status", f"{user}/{slug(phase)}"]
     if action == "pull":
-        return ["kaggle", "kernels", "output", f"{user}/{slug(phase)}", "-p", str(out_dir)]
+        # --force is not optional. Without it the CLI skips any file whose
+        # local copy looks newer ("Skipping, found more recently modified
+        # local copy"), so a re-run of the same phase silently serves the
+        # PREVIOUS run's results from .kaggle_output/ and the gate then scores
+        # data that never came from the run you just did.
+        return ["kaggle", "kernels", "output", f"{user}/{slug(phase)}",
+                "-p", str(out_dir), "--force"]
     raise ValueError(f"unknown action {action!r}")
 
 
