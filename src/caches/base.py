@@ -63,7 +63,17 @@ class SRKVCacheBase(DynamicCache):
         self.is_centroid: dict[int, torch.Tensor] = {}
 
         self.t_now: float = 0.0
-        self._pos_counter = 0
+        #: per-layer fallback position counter (see `update()`) - MUST be
+        #: keyed by layer_idx, not a single shared int. transformers>=5.0
+        #: calls `past_key_values.update(key_states, value_states, layer_idx)`
+        #: with no `cache_kwargs` at all (confirmed against the installed
+        #: Qwen2/Llama modeling code), so this fallback is not a rare corner
+        #: case - it is the only path that ever runs, for every layer. A
+        #: shared counter advanced only at layer_idx==0 would let layer 0
+        #: bump it mid-forward-pass before layers 1..L-1 read it, corrupting
+        #: their positions by a full step's worth of tokens (and compounding
+        #: every subsequent step). Each layer must track its own.
+        self._pos_counter: dict[int, int] = {}
         #: budget_used_pct sampled at every forward pass (Phase 3 checks the
         #: whole trajectory, not just the final value)
         self.budget_history: list[float] = []
@@ -81,9 +91,9 @@ class SRKVCacheBase(DynamicCache):
         b, kv_heads = key_states.shape[0], key_states.shape[1]
         cache_position = (cache_kwargs or {}).get("cache_position")
         if cache_position is None:
-            cache_position = torch.arange(
-                self._pos_counter, self._pos_counter + n_new, device=key_states.device
-            )
+            start = self._pos_counter.get(layer_idx, 0)
+            cache_position = torch.arange(start, start + n_new, device=key_states.device)
+        self._pos_counter[layer_idx] = int(cache_position[-1].item()) + 1
         new_pos = cache_position.detach().float().view(1, 1, n_new).expand(b, kv_heads, n_new)
         new_w = torch.ones(b, kv_heads, n_new, device=key_states.device, dtype=torch.float32)
         new_c = torch.zeros(b, kv_heads, n_new, device=key_states.device, dtype=torch.bool)
@@ -99,7 +109,6 @@ class SRKVCacheBase(DynamicCache):
 
         if layer_idx == 0:
             self.n_tokens_seen += n_new
-            self._pos_counter = int(cache_position[-1].item()) + 1
             self.t_now = float(cache_position[-1].item())
             if not self._budget_initialized:
                 self._init_budget(n_new)
@@ -117,7 +126,7 @@ class SRKVCacheBase(DynamicCache):
         self.n_tokens_seen = 0
         self.n_tokens_evicted = 0
         self.t_now = 0.0
-        self._pos_counter = 0
+        self._pos_counter.clear()
         self.budget_history.clear()
         self.query_buf.clear()
         self.query_pos_buf.clear()

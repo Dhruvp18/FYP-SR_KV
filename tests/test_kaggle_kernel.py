@@ -44,6 +44,12 @@ def test_metadata_is_valid_for_every_phase(phase):
     meta = build_metadata(phase, "dhruvp18")
     assert meta["id"] == f"dhruvp18/sr-kv-phase{phase}"
     assert meta["code_file"] == f"sr-kv-phase{phase}.ipynb"
+    # Kaggle derives the kernel's *live* slug from `title`, not from `id`. A
+    # title with spaces/punctuation slugifies to something else, and every
+    # later status/pull call (built from slug(phase)) would then 404 against
+    # a kernel that actually lives at a different URL. The title must be the
+    # slug itself so the two can never diverge.
+    assert meta["title"] == slug(phase)
     assert meta["kernel_type"] == "notebook"
     assert meta["enable_internet"] is True
     assert meta["is_private"] is True

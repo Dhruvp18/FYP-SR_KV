@@ -78,7 +78,13 @@ def build_metadata(phase: int, user: str, *, depends_on: list[str] | None = None
         depends_on = [f"{user}/{slug(p)}" for p in sorted(PHASES) if p < phase]
     return {
         "id": f"{user}/{slug(phase)}",
-        "title": f"SR-KV Phase {phase} - {PHASES[phase]['title']}",
+        # Kaggle derives the kernel's *live* slug from this title, not from
+        # `id` - a title with spaces/punctuation would slugify to something
+        # else (e.g. "SR-KV Phase 1 - harness sanity" -> "sr-kv-phase-1-
+        # harness-sanity") and every later status/pull call, which is built
+        # from slug(phase), would 404. Keeping the title identical to the
+        # slug is what makes `id` and the real kernel URL agree.
+        "title": slug(phase),
         "code_file": f"{slug(phase)}.ipynb",
         "language": "python",
         "kernel_type": "notebook",

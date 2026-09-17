@@ -77,6 +77,28 @@ def test_noop_cache_evicts_nothing(tiny_model, prompt_ids):
     assert cache.check_conservation()
 
 
+def test_position_bookkeeping_agrees_across_layers(tiny_model_gqa, prompt_ids):
+    """Every layer must assign the same real position to the same token.
+
+    transformers>=5.0 calls `Cache.update(key_states, value_states, layer_idx)`
+    with no `cache_kwargs` at all, so every layer falls back to this cache's
+    own position counter. Regression test for a bug where that counter was a
+    single int advanced only at layer_idx==0: layer 0 would bump it mid
+    forward-pass before layers 1..L-1 read it, so every other layer's
+    positions drifted ahead by a full step's worth of tokens - silently
+    corrupting the RoPE delta used to re-rotate merged centroids, while
+    leaving generation output and finite/conservation checks untouched (which
+    is why this needed a dedicated check rather than relying on those).
+    """
+    cache = make_cache("full", model=tiny_model_gqa)
+    _generate(tiny_model_gqa, cache, prompt_ids)
+    reference = cache.positions[0]
+    for layer_idx, positions in cache.positions.items():
+        assert torch.equal(positions, reference), (
+            f"layer {layer_idx} disagrees with layer 0 on token positions"
+        )
+
+
 def test_get_stats_returns_exactly_the_contract_keys(tiny_model, prompt_ids):
     for method in ["full", *COMPRESSED_METHODS]:
         cache = _cache(tiny_model, method)

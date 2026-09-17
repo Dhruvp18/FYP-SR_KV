@@ -14,3 +14,5 @@ figures/
 # generated Kaggle kernel dirs are committed (they are small and useful to
 # the agent); their pulled outputs are not
 .kaggle_output/
+
+.venv/
