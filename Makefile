@@ -23,7 +23,7 @@ SHARD   ?= 0
 NSHARDS ?= 1
 
 .PHONY: help test configs \
-        phase1 phase1-4bit phase2 phase3 phase4 freeze-rope \
+        phase1 phase1-4bit phase2 phase3 phase4 phase4-scan freeze-rope \
         phase5 phase5-longbench phase6-sweep phase6-3b phase7 \
         gate1 gate2 gate3 gate4 gate5 gate6 gate7 \
         check-complete check-ablation plots report_artifacts clean-figures
@@ -93,20 +93,44 @@ gate3:
 # --- Phase 4: choose the centroid RoPE convention by experiment ------------
 # The three literal modes belong here and nowhere else: this target IS the
 # ablation. Every later phase reads the winner from configs/defaults.yaml.
+#
+# SAMPLES4 is separate from SAMPLES on purpose. This comparison needs enough
+# records per mode to separate the conventions from sampling noise: measured
+# at n=25/mode the three modes came out 7/25, 6/25, 7/25 (Fisher exact
+# p=1.000), where one flipped record moves a mean by 0.04 - larger than any
+# difference worth reporting. Raise it, do not reuse the sweep default.
+SAMPLES4 ?= 5
+
 phase4:
 	for mode in latest earliest attn_weighted; do \
 	  $(PY) eval/run.py --method sr_kv --model $(MODEL) --task niah \
-	    --context_len 8192 --budget $(BUDGET) --n_samples 5 \
+	    --context_len 8192 --budget $(BUDGET) --n_samples $(SAMPLES4) \
 	    --depths 0,25,50,75,100 --rope_position_mode $$mode \
 	    --output $(RESULTS)/phase4_rope_$$mode.json || exit 1; \
 	done
 	$(PY) scripts/make_plots.py --only rope
 
+# Diagnostic, not a gated phase: locate a budget where NIAH accuracy is
+# mid-range, so the comparison above has something it can separate. Measured
+# so far: budget=0.3 saturates at 1.000 for all three modes, budget=0.1 floors
+# at ~0.25 carried entirely by depth=100 (needle inside the observation
+# window). A sweep at either extreme cannot distinguish the conventions at any
+# sample size, so the budget has to be found before spending quota on power.
+# One mode is enough to locate it - the modes are what we are trying to tell
+# apart, not what sets the difficulty.
+phase4-scan:
+	for b in 0.15 0.20 0.25; do \
+	  $(PY) eval/run.py --method sr_kv --model $(MODEL) --task niah \
+	    --context_len 8192 --budget $$b --n_samples 3 \
+	    --depths 0,25,50,75,100 --rope_position_mode attn_weighted \
+	    --output $(RESULTS)/phase4_scan_b$$b.json || exit 1; \
+	done
+
 gate4:
-	$(PY) scripts/check_results.py gate --phase 4 --model $(MODEL)
+	$(PY) scripts/check_results.py gate --phase 4 --model $(MODEL) --budget $(BUDGET)
 
 freeze-rope:
-	$(PY) scripts/freeze_rope_mode.py --model $(MODEL) --apply
+	$(PY) scripts/freeze_rope_mode.py --model $(MODEL) --budget $(BUDGET) --apply
 
 # --- Phase 5: the factorial matrix -----------------------------------------
 phase5:

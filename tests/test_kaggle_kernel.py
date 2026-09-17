@@ -125,6 +125,28 @@ def test_notebook_restores_previous_results_before_running():
     assert restore < work, "results must be restored before the phase runs, or resume is pointless"
 
 
+def test_targets_and_skip_gate_support_diagnostic_runs():
+    """phase4-scan has no pass condition, so it must be able to skip the gate."""
+    commands = build_commands(4, model="m", model3b="m3", budget=0.3, samples=3,
+                              shard=0, num_shards=1, targets=["phase4-scan"], skip_gate=True)
+    assert any(c.startswith("make phase4-scan ") for c in commands)
+    assert not any("gate4" in c for c in commands)
+    assert not any("freeze-rope" in c for c in commands), (
+        "freeze-rope runs after the gate; skipping the gate must skip it too"
+    )
+    # the default path is unchanged
+    default = build_commands(4, model="m", model3b="m3", budget=0.3, samples=3,
+                             shard=0, num_shards=1)
+    assert any("gate4" in c for c in default)
+    assert any("freeze-rope" in c for c in default)
+
+
+def test_extra_make_vars_reach_the_commands():
+    commands = build_commands(4, model="m", model3b="m3", budget=0.2, samples=3,
+                              shard=0, num_shards=1, extra_vars="SAMPLES4=20")
+    assert all("SAMPLES4=20" in c for c in commands)
+
+
 def test_sharding_reaches_the_generated_commands():
     commands = build_commands(5, model="m", model3b="m3", budget=0.3, samples=3,
                               shard=2, num_shards=4)

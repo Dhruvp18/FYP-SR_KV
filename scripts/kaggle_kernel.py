@@ -101,21 +101,34 @@ def build_metadata(phase: int, user: str, *, depends_on: list[str] | None = None
 
 
 def build_commands(phase: int, *, model: str, model3b: str, budget: float, samples: int,
-                   shard: int, num_shards: int) -> list[str]:
-    """The make invocations this phase runs, in order."""
+                   shard: int, num_shards: int, targets: list[str] | None = None,
+                   skip_gate: bool = False, extra_vars: str = "") -> list[str]:
+    """The make invocations this phase runs, in order.
+
+    `targets` overrides the phase's usual target list, and `skip_gate` drops
+    the gate. Both exist for diagnostic runs like `phase4-scan`, which answers
+    "which budget is even worth measuring at" and has no pass condition of its
+    own - running that phase's gate against it would just fail on a sweep that
+    was never meant to satisfy it.
+    """
     spec = PHASES[phase]
     variables = (
         f"MODEL={model} MODEL3B={model3b} BUDGET={budget} "
         f"SAMPLES={samples} SHARD={shard} NSHARDS={num_shards}"
     )
-    commands = [f"make {target} {variables}" for target in spec["targets"]]
-    commands.append(f"make {spec['gate']} {variables}")
-    commands += [f"make {target} {variables}" for target in spec.get("after_gate", [])]
+    if extra_vars:
+        variables = f"{variables} {extra_vars}"
+    commands = [f"make {target} {variables}" for target in (targets or spec["targets"])]
+    if not skip_gate:
+        commands.append(f"make {spec['gate']} {variables}")
+        commands += [f"make {target} {variables}" for target in spec.get("after_gate", [])]
     return commands
 
 
 def build_notebook(phase: int, *, repo: str, model: str, model3b: str, budget: float,
-                   samples: int, shard: int, num_shards: int) -> dict:
+                   samples: int, shard: int, num_shards: int,
+                   targets: list[str] | None = None, skip_gate: bool = False,
+                   extra_vars: str = "") -> dict:
     """A thin notebook: clone, install, restore, run make targets, check the gate.
 
     No project logic lives here - it shells out to the Makefile, same as a local
@@ -123,7 +136,8 @@ def build_notebook(phase: int, *, repo: str, model: str, model3b: str, budget: f
     """
     spec = PHASES[phase]
     commands = build_commands(phase, model=model, model3b=model3b, budget=budget,
-                              samples=samples, shard=shard, num_shards=num_shards)
+                              samples=samples, shard=shard, num_shards=num_shards,
+                              targets=targets, skip_gate=skip_gate, extra_vars=extra_vars)
 
     def md(*lines):
         return {"cell_type": "markdown", "metadata": {}, "source": [f"{line}\n" for line in lines]}
@@ -275,6 +289,7 @@ def cmd_generate(args) -> int:
     notebook = build_notebook(
         args.phase, repo=args.repo, model=args.model, model3b=args.model3b,
         budget=args.budget, samples=args.samples, shard=args.shard, num_shards=args.num_shards,
+        targets=args.target, skip_gate=args.skip_gate, extra_vars=args.make_var or "",
     )
 
     (directory / "kernel-metadata.json").write_text(json.dumps(metadata, indent=2), encoding="utf-8")
@@ -369,6 +384,10 @@ def cmd_run(args) -> int:
 
     cmd_pull(args)
 
+    if getattr(args, "skip_gate", False):
+        print("\n(--skip-gate: diagnostic run, no pass condition to check)")
+        return 0
+
     gate = ["python", "scripts/check_results.py", "gate", "--phase", str(args.phase),
             "--model", args.model3b if args.phase == 6 else args.model,
             "--budget", str(args.budget), "--n-samples", str(args.samples)]
@@ -395,6 +414,14 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--samples", type=int, default=3)
     parser.add_argument("--shard", type=int, default=0)
     parser.add_argument("--num_shards", type=int, default=1)
+    parser.add_argument("--target", action="append", default=None,
+                        help="run these Makefile targets instead of the phase's usual ones "
+                             "(repeatable), e.g. --target phase4-scan")
+    parser.add_argument("--skip-gate", action="store_true",
+                        help="do not run the phase gate - for diagnostic runs that have no "
+                             "pass condition of their own")
+    parser.add_argument("--make-var", default=None,
+                        help='extra make variables, e.g. --make-var "SAMPLES4=20"')
     parser.add_argument("--depends-on", action="append", default=None,
                         help="kernel to mount for resume, e.g. user/sr-kv-phase4 (repeatable)")
     parser.add_argument("--download-to", default=None)
