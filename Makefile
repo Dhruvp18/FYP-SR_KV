@@ -156,11 +156,24 @@ phase5:
 	  --n_samples $(SAMPLES) --shard $(SHARD) --num_shards $(NSHARDS) \
 	  --output $(RESULTS)/phase5_niah_full_$(MODEL).json
 
+# One process per method, not one process for all five. A single process
+# handling all ~500 tasks OOM'd twice on a real run - once at task ~81
+# (fixed by expandable_segments below), then again at task ~280 requesting
+# just 1.15 GiB with the allocator fix already active, so it isn't purely
+# fragmentation: something in the generate/cache stack is not fully
+# releasing GPU memory between tasks, and defragmenting a leak only delays
+# it. All five invocations still append to the same --output file (that's
+# how resumability already works across separate pushes), so this costs
+# four extra model loads (~seconds each) in exchange for a fresh CUDA
+# context - and therefore a real zeroed allocator - per method. Same
+# per-item-loop pattern phase4/phase6-sweep already use for the same reason.
 phase5-longbench:
-	$(PY) eval/run.py --method full,streaming_llm,snapkv_unified,centroid_merge,sr_kv \
-	  --model $(MODEL) --task longbench --budget $(BUDGET) --n_samples 25 \
-	  --shard $(SHARD) --num_shards $(NSHARDS) \
-	  --output $(RESULTS)/phase5_longbench_$(MODEL).json
+	for method in full streaming_llm snapkv_unified centroid_merge sr_kv; do \
+	  $(PY) eval/run.py --method $$method \
+	    --model $(MODEL) --task longbench --budget $(BUDGET) --n_samples 25 \
+	    --shard $(SHARD) --num_shards $(NSHARDS) \
+	    --output $(RESULTS)/phase5_longbench_$(MODEL).json || exit 1; \
+	done
 
 gate5:
 	$(PY) scripts/check_results.py gate --phase 5 --model $(MODEL) --budget $(BUDGET) \
