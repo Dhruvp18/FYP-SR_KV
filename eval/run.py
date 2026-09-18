@@ -67,6 +67,11 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--niah_corpus", default="synthetic", choices=["synthetic", "pg"])
     p.add_argument("--longbench_tasks", type=_csv(str),
                    default=["narrativeqa", "qasper", "gov_report", "triviaqa"])
+    p.add_argument("--longbench_max_context_tokens", type=int, default=8192,
+                   help="LongBench documents run far past this project's 8k-16k scope "
+                        "untruncated (narrativeqa OOM'd a T4 at 43.89 GiB during prefill, "
+                        "before any cache eviction ever ran) - truncate to this many tokens, "
+                        "keeping both ends (LongBench's own convention). 0 disables truncation.")
     p.add_argument("--max_new_tokens", type=int, default=32)
 
     # policy hyperparameters (Phase 6 sweeps these)
@@ -270,7 +275,8 @@ def main(argv=None) -> int:
         samples = {
             s.task_id: s
             for s in longbench.build_samples(
-                tasks=sorted({t["lb_task"] for t in todo}), n_samples=args.n_samples
+                tasks=sorted({t["lb_task"] for t in todo}), n_samples=args.n_samples,
+                tokenizer=tokenizer, max_context_tokens=args.longbench_max_context_tokens or None,
             )
         }
         score_fn = longbench.score

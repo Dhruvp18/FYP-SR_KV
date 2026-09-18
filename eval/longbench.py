@@ -97,13 +97,43 @@ def _longbench_data_dir() -> "Path":
     return data_dir
 
 
+def _truncate_by_tokens(tokenizer, text: str, max_tokens: int) -> str:
+    """Keep the first and last halves of the token budget, drop the middle.
+
+    LongBench's own evaluation harness truncates this way for models with a
+    limited context window: relevant information can be anywhere in the
+    document, so keeping both ends loses less than truncating from one side.
+    """
+    ids = tokenizer(text, add_special_tokens=False)["input_ids"]
+    if len(ids) <= max_tokens:
+        return text
+    half = max_tokens // 2
+    kept = ids[:half] + ids[-(max_tokens - half):]
+    return tokenizer.decode(kept)
+
+
 def build_samples(
     tasks=("narrativeqa", "qasper", "gov_report", "triviaqa"),
     *,
     n_samples: int = 25,
     max_context_chars: int | None = None,
+    tokenizer=None,
+    max_context_tokens: int | None = None,
 ) -> list[LongBenchSample]:
-    """Load the LongBench subset directly from its data.zip (needs network on first run)."""
+    """Load the LongBench subset directly from its data.zip (needs network on first run).
+
+    LongBench's native documents run far longer than this project's stated
+    scope (8k-16k tokens) - narrativeqa alone averages well past that
+    untruncated - and prefill computes full self-attention over the whole
+    document before any cache eviction/merging ever runs (CLAUDE.md A2), so
+    an oversized document OOMs identically for every method, not just the
+    uncompressed baseline (confirmed: `full` tried to allocate 43.89 GiB on a
+    14.56 GiB T4 on the real, untruncated narrativeqa context). Pass
+    `tokenizer` + `max_context_tokens` to truncate precisely, the same way
+    `niah.build_samples` controls context length by tokens rather than
+    characters. `max_context_chars` is a cruder fallback for when no
+    tokenizer is available.
+    """
     import json
 
     data_dir = _longbench_data_dir()
@@ -119,7 +149,9 @@ def build_samples(
                     break
                 row = json.loads(line)
                 context = row["context"]
-                if max_context_chars:
+                if max_context_tokens and tokenizer is not None:
+                    context = _truncate_by_tokens(tokenizer, context, max_context_tokens)
+                elif max_context_chars:
                     context = context[:max_context_chars]
                 out.append(
                     LongBenchSample(
