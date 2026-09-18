@@ -24,7 +24,7 @@ NSHARDS ?= 1
 
 .PHONY: help test configs \
         phase1 phase1-4bit phase2 phase3 phase4 phase4-scan freeze-rope \
-        phase5 phase5-longbench phase5-recompress-probe phase6-sweep phase6-3b phase7 \
+        phase5 phase5-longbench phase5-recompress-probe phase6-sweep phase6-3b-scan phase6-3b phase7 \
         gate1 gate2 gate3 gate4 gate5 gate6 gate7 \
         check-complete check-ablation plots report_artifacts clean-figures
 
@@ -230,6 +230,21 @@ phase6-sweep:
 	      --output $(RESULTS)/phase6_sweep_a$${a}_b$${b}.json || exit 1; \
 	  done; \
 	done
+
+# Diagnostic, not a gated phase: `full` (uncompressed) on qwen2.5-1.5b at
+# 8192 tokens already used 11.9-13.5 GiB on a 14.56 GiB T4 for LongBench -
+# essentially no margin. qwen2.5-3b is a bigger model (more weight memory,
+# larger activations at the same sequence length), so `full` at the same
+# 8192-token ceiling that phase6-3b tests is a real, foreseeable OOM risk.
+# Two samples at the longest context, cheap, before committing the full
+# 5-method x 3-context x 5-depth x n_samples sweep to a precision that might
+# not fit. choose_precision()'s "auto" only estimates KV-cache size, not
+# activation/logits memory - it under-estimated for LongBench (picked bf16
+# when bf16 didn't actually fit), so do not trust it uncritically here either.
+phase6-3b-scan:
+	$(PY) eval/run.py --method full --model $(MODEL3B) --task niah \
+	  --context_len 8192 --depths 50 --n_samples 2 \
+	  --output $(RESULTS)/diagnostics/phase6_3b_scan.json
 
 # No re-sweep on 3B on purpose: the question is whether the 1.5B-tuned config
 # transfers, and re-tuning would answer a different question.
