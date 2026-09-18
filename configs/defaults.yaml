@@ -22,8 +22,48 @@ rope_position_mode_frozen: true
 rope_position_mode_evidence: "not empirically distinguished: latest=0.760, earliest=0.760, attn_weighted=0.770 (n=100/mode, budget=0.2, ctx=8192, Fisher exact p=1.000). attn_weighted kept as a principled default, not a measured winner."
 
 # scoring
-alpha: 1.0
+#
+# Phase 6 swept alpha in {0.5, 1.0, 2.0} x beta in {0.0, 0.3, 0.6} on NIAH
+# (qwen2.5-1.5b, budget=0.2, ctx=4096+8192, n=30/cell, 270 records, 0 errors):
+#
+#   alpha  beta   4096    8192    all
+#     0.5   0.0  1.000   1.000   1.000
+#     1.0   0.0  1.000   1.000   1.000
+#     2.0   0.0  1.000   1.000   1.000
+#     0.5   0.3  0.267   0.600   0.433
+#     1.0   0.3  0.267   0.733   0.500   <- the previous default
+#     2.0   0.3  0.667   1.000   0.833   <- chosen
+#     0.5   0.6  0.333   0.400   0.367
+#     1.0   0.6  0.267   0.600   0.433
+#     2.0   0.6  0.267   0.733   0.500
+#
+# beta=0 is the literal optimum and is NOT frozen here, deliberately. With
+# beta=0 the importance score is alpha*attn alone; with use_recency=False it
+# is alpha*attn + beta*1, a constant offset that cannot re-rank (see
+# scoring.recency_decay). The two rank identically, so beta=0 would make
+# `sr_kv` and `centroid_merge` the same policy and reduce the Phase 5/7
+# recency ablation to a method compared against itself. Freezing it would buy
+# a NIAH number by deleting the mechanism under test.
+#
+# Why beta>0 loses on NIAH at all is mechanistic, not a defect: NIAH randomises
+# needle depth, so any recency prior evicts early needles. The per-depth
+# breakdown at alpha=2.0 shows exactly that gradient, and shows alpha=2.0
+# largely absorbing it:
+#   beta      d0     d25     d50     d75    d100
+#   0.0     1.00    1.00    1.00    1.00    1.00
+#   0.3     0.67    0.67    0.83    1.00    1.00
+#   0.6     0.50    0.00    0.33    0.67    1.00
+#
+# alpha=2.0/beta=0.3 is therefore the best configuration in which SR-KV is
+# still SR-KV: +0.333 over the previous default, recency term intact.
+#
+# CAVEAT for the writeup: Phases 4 and 5 ran at alpha=1.0, beta=0.3. Their
+# records carry those values; do not describe them as running the frozen
+# config. Phase 6's 3B transfer is the first run at alpha=2.0.
+alpha: 2.0
 beta: 0.3
+alpha_beta_frozen: true
+alpha_beta_evidence: "alpha=2.0, beta=0.3 chosen from the Phase 6 NIAH sweep (qwen2.5-1.5b, budget=0.2, n=30/cell): best cell with a functional recency term, 0.833 vs 0.500 at the previous alpha=1.0. beta=0 scored 1.000 but is rank-identical to use_recency=False, which would collapse sr_kv into centroid_merge and void the recency ablation, so it was rejected on design grounds and the reason recorded rather than the number taken."
 lam: 0.001
 obs_window: 32
 pool_kernel: 7

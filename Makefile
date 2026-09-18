@@ -137,11 +137,19 @@ phase4-scan:
 	    --output $(RESULTS)/diagnostics/phase4_scan_b$$b.json || exit 1; \
 	done
 
+# Phase 4 varied ONLY rope_position_mode; these are the scoring knobs it held
+# fixed (defaults.yaml's values at the time it ran). Pinning them here keeps
+# Phase 6's alpha/beta sweep - same model, same budget, same default rope mode,
+# same results/ directory - from being counted as extra Phase 4 samples.
+ALPHA4 ?= 1.0
+BETA4  ?= 0.3
+LAM4   ?= 0.001
+
 gate4:
-	$(PY) scripts/check_results.py gate --phase 4 --model $(MODEL) --budget $(BUDGET)
+	$(PY) scripts/check_results.py gate --phase 4 --model $(MODEL) --budget $(BUDGET) 	  --alpha $(ALPHA4) --beta $(BETA4) --lam $(LAM4)
 
 freeze-rope:
-	$(PY) scripts/freeze_rope_mode.py --model $(MODEL) --budget $(BUDGET) --apply
+	$(PY) scripts/freeze_rope_mode.py --model $(MODEL) --budget $(BUDGET) 	  --alpha $(ALPHA4) --beta $(BETA4) --lam $(LAM4) --apply
 
 # --- Phase 5: the factorial matrix -----------------------------------------
 phase5:
@@ -153,7 +161,7 @@ phase5:
 	  --output $(RESULTS)/phase5_niah_$(MODEL).json
 	$(PY) eval/run.py --method full --model $(MODEL) --task niah \
 	  --context_len 2048,4096,8192,16384 --depths 0,25,50,75,100 \
-	  --n_samples $(SAMPLES) --shard $(SHARD) --num_shards $(NSHARDS) \
+	  --budget 1.0 --n_samples $(SAMPLES) --shard $(SHARD) --num_shards $(NSHARDS) \
 	  --output $(RESULTS)/phase5_niah_full_$(MODEL).json
 
 # One process per method, not one process for all five. A single process
@@ -248,16 +256,36 @@ phase6-3b-scan:
 
 # No re-sweep on 3B on purpose: the question is whether the 1.5B-tuned config
 # transfers, and re-tuning would answer a different question.
+# Two budgets on purpose. 0.2 is where the 1.5B sweep ran and where Phase 4
+# measured mid-range accuracy, so it can actually separate the methods; 0.3 is
+# the Makefile default that Phase 3 showed saturates to 1.000 for every method
+# at 8k. Running both gives the transfer question a discriminating point and
+# keeps the saturated one for comparison, instead of betting the whole 3B run
+# on a budget that may prove nothing.
+BUDGETS6 ?= 0.2,0.3
+COMMA := ,
+
+# `full` is uncompressed, so a budget is meaningless for it - make_cache
+# ignores the value. It gets its own invocation at --budget 1.0 because that
+# is the label check_completeness expects for an uncompressed reference, and
+# because folding it into the sweep above would otherwise run the single most
+# expensive method once per budget for identical work.
 phase6-3b:
-	$(PY) eval/run.py --method full,streaming_llm,snapkv_unified,centroid_merge,sr_kv \
+	$(PY) eval/run.py --method streaming_llm,snapkv_unified,centroid_merge,sr_kv \
 	  --model $(MODEL3B) --task niah \
 	  --context_len 2048,4096,8192 --depths 0,25,50,75,100 \
-	  --budget $(BUDGET) --n_samples $(SAMPLES) \
+	  --budget $(BUDGETS6) --n_samples $(SAMPLES) \
 	  --shard $(SHARD) --num_shards $(NSHARDS) \
 	  --output $(RESULTS)/phase6_niah_$(MODEL3B).json
+	$(PY) eval/run.py --method full --model $(MODEL3B) --task niah \
+	  --context_len 2048,4096,8192 --depths 0,25,50,75,100 \
+	  --budget 1.0 --n_samples $(SAMPLES) \
+	  --shard $(SHARD) --num_shards $(NSHARDS) \
+	  --output $(RESULTS)/phase6_niah_full_$(MODEL3B).json
 
 gate6:
-	$(PY) scripts/check_results.py gate --phase 6 --model $(MODEL3B) --budget $(BUDGET)
+	$(PY) scripts/check_results.py gate --phase 6 --model $(MODEL3B) \
+	  $(foreach b,$(subst $(COMMA), ,$(BUDGETS6)),--budget $(b)) --n-samples $(SAMPLES)
 
 # --- Phase 7: every figure, one command ------------------------------------
 phase7 plots report_artifacts:
