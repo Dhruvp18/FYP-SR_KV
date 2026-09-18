@@ -8,7 +8,152 @@ Repo: <https://github.com/Dhruvp18/FYP-SR_KV>
 
 ---
 
-## READ THIS FIRST — full handoff for a new person, 2026-09-18
+## READ THIS FIRST — current state, 2026-09-19 (Phase 6 3B)
+
+Phase 6's 3B transfer is **83/270 records done and committed**, resumable, and
+blocked on one thing a human has to do. Everything else in this section is
+either a fix that landed or a dead end you should not repeat.
+
+### The blocker, first, because it decides what you do next
+
+`qwen2.5-3b` is 5.8 GiB and every Kaggle session downloads it from the
+Hugging Face Hub **unauthenticated**, which is now throttled hard enough to
+consume an entire session. Attempt D sat at `Fetching 2 files: 0%` for 7.5
+hours. Cycles 3, 4, 5 and 6 each banked **zero tasks** for the same reason.
+
+**Fix it by adding an `HF_TOKEN` Kaggle secret to the account you run under**
+(notebook editor → Add-ons → Secrets, name it exactly `HF_TOKEN`, value = an
+HF access token). Unauthenticated Hub downloads are rate-limited per IP and
+Kaggle's egress is shared, which is why repeated 6 GB pulls degrade. A token
+removes the limit. The kernels already read that secret if it exists.
+
+The obvious alternative — mount Kaggle's own `qwen-lm/qwen2.5` mirror, which
+is local disk with no rate limit — **does not work through the Kaggle MCP
+server**. `save_notebook`'s `modelDataSources` is accepted and silently
+ignored: a probe kernel pushed with four different ref spellings at once
+(`.../Transformers/3b-instruct/1`, `.../transformers/3b-instruct/1`,
+version-less, and `pytorch/`) reported `/kaggle/input: []` and zero
+safetensors. If you drive Kaggle with the **CLI** instead, put
+`"model_sources": ["qwen-lm/qwen2.5/Transformers/3b-instruct/1"]` in
+`kernel-metadata.json`, mount it, and set:
+
+    SRKV_MODEL_PATHS="qwen2.5-3b=/kaggle/input/qwen2.5/transformers/3b-instruct/1"
+
+`src/models.py` reads that env var and maps alias → local path. It is
+deliberately alias → path and not "pass the path as `--model`": `args.model`
+is what every record, every `run_key` and every gate filter carries, so a
+mount point there renames the model mid-phase and splits the results into two
+incomparable groups.
+
+### How to actually run it (the procedure that works)
+
+A 3B session wedges: the process stops making progress, writes nothing more,
+and **cannot be killed from inside** — a `timeout -k 30` with a 600s limit sat
+on one for 12.5 hours. Only external cancellation recovers it. But every
+finished task is fsynced and the run resumes, so:
+
+    launch → let it work ~30 min → cancel the session via the API →
+    download results/phase6_niah_qwen2.5-3b.jsonl from the cancelled
+    kernel's output → commit → relaunch
+
+Cycle 1 banked +47 tasks that way in ~35 minutes; a 10-hour unattended
+session banked 16. The work itself is ~6s/task — all 270 tasks are about 30
+minutes of real compute. Everything else is the wedge.
+
+Two things that do **not** help, both tested:
+- **Two concurrent kernels.** Both banked zero. The "2 concurrent GPU
+  sessions" allowance is nominal; they starve each other. One at a time.
+- **Per-chunk `timeout`.** See above, it cannot reap a wedged CUDA process.
+
+Always make the notebook **assert the mount exists** before doing anything
+else. Cycle 6 printed `mount exists: False` and carried on into the throttled
+Hub, costing a session; the assert version failed in 9.7 seconds instead.
+
+### Phase 6's shape changed, and why
+
+- **bf16, contexts 2048 and 4096 only. No 8192 on 3B.** bf16 at 8192 OOMs on a
+  T4 (asked 4.05 GiB with 3.91 free). 4-bit fits (11.96 GiB peak, 1.000
+  accuracy, ~32s/task) but hangs. This is a recorded scope reduction: the
+  transfer claim is "the 1.5B-tuned config transfers to 3B at 2k–4k", with no
+  8192 evidence on 3B. `PHASE6_CONTEXTS` carries the same note.
+- **alpha=2.0, beta=0.3 frozen.** The sweep's literal optimum is beta=0, which
+  is rank-identical to `use_recency=False` and would collapse `sr_kv` into
+  `centroid_merge`, voiding the recency ablation. alpha=2.0/beta=0.3 is the
+  best cell where SR-KV is still SR-KV: 0.833 vs 0.500 at the old alpha=1.0.
+  Phases 4 and 5 ran at alpha=1.0 and must not be described as running the
+  frozen config.
+- **Both budgets 0.2 and 0.3**, because 0.3 saturates at 8k and proves nothing.
+
+### What the 83 records already show (partial, not a result)
+
+    method           budget    ctx   n    acc
+    streaming_llm       0.2   2048  15  0.200
+    streaming_llm       0.2   4096  15  0.200
+    streaming_llm       0.3   2048  15  0.400
+    streaming_llm       0.3   4096  15  0.400
+    snapkv_unified      0.2   2048  15  0.933
+    snapkv_unified      0.2   4096   8  1.000
+
+`streaming_llm` far below `snapkv_unified` is the expected scored-vs-structural
+split reproducing at 3B, so the harness is behaving. Remaining: `sr_kv` (60),
+`centroid_merge` (60), `full` (30), `snapkv_unified` (37).
+
+### Bugs fixed this session
+
+16. **Phase 6's sweep was being counted as extra Phase 4 RoPE samples.** Both
+    write `method=sr_kv` for qwen2.5-1.5b at budget=0.2, and Phase 6 ran at the
+    default rope mode, so gate4 folded all 270 sweep records into the
+    `attn_weighted` arm: 100-vs-100 became 100-vs-370 and `attn_weighted` moved
+    0.770 → 0.700, p=1.000 → 0.264. Nothing was re-run; a published number moved
+    because a different experiment shared a directory. `freeze_rope_mode.py` had
+    it too. Fixed with an alpha/beta/lam guard plus a `run_key` guard (the thing
+    that actually separates them), sharing one resolver so the gate and the
+    freeze cannot drift apart. Phase 4 reproduces again at 76/76/77, p=1.000.
+17. **`gate6` could never have passed.** Its completeness check expects the
+    uncompressed reference at `budget=1.0`, but runs recorded `full` at whatever
+    `--budget` was passed. `full` now gets its own invocation at `--budget 1.0`.
+18. **`precision` was not in `run_key`.** The 57 salvaged 4-bit records shared
+    `task_id` *and* `run_key` with their bf16 counterparts, so `is_done` would
+    have marked every bf16 task complete and the run would have reported a
+    finished grid it never measured. Precision is now part of the key; the 4-bit
+    records are quarantined in `results/diagnostics/` (excluded by
+    `load_records`' non-recursive glob); and `gate6` refuses to mix precisions
+    the way gate4 refuses to mix budgets.
+19. **Two gate6 tests rotted silently when 8192 left the scope.** Both asserted
+    "a missing cell is caught" using a hardcoded 8192; once the gate stopped
+    looking there, the grid was complete and the assertion failed. Written the
+    other way round they would have passed while testing nothing. They now read
+    `PHASE6_CONTEXTS[-1]`.
+20. **`choose_precision()` under-estimates, confirmed a fourth time.** Its auto
+    mode sizes weights + uncompressed KV + 2.5 GB headroom and never models the
+    attention activation, which is what actually OOMs. Phase 6 passes precision
+    explicitly rather than trusting it.
+
+### Wrong turns, so you do not repeat them
+
+I was wrong three times about why 3B sessions stall, and each wrong theory
+cost a cycle. Recorded so the next person starts from the evidence:
+
+- **"expandable_segments causes it."** Removed it; attempt C hung anyway.
+- **"4-bit bitsandbytes causes it."** Attempt E ran bf16 and hung identically,
+  at 8.36 GiB of 14.56 — no memory pressure. Precision is not the variable.
+- **"a specific poisoned task causes it."** Cycles 3–6 all stopped at the same
+  record, which looked deterministic; cycle 6 skipped that chunk entirely and
+  still banked zero. The identical stopping point was just the resume marker
+  standing still while nothing ran.
+
+What is actually established: it is specific to **qwen2.5-3b** on this harness
+(Phases 4 and 5 ran 300 and 500 tasks at 1.5B without one stall), independent
+of precision, method, context and memory, and unkillable from inside. **There
+is no root cause yet.** Read the kernel log before theorising — Kaggle
+truncates it after a few hundred seconds, so a stall never appears in it, and
+the only reliable evidence is cancelling the session and reading the salvaged
+`.jsonl`.
+
+---
+
+
+## BACKGROUND — the 2026-09-18 session, still accurate for Phases 1-5
 
 You are picking up an FYP project cold. This section is written to be
 complete on its own — you should not need to ask "what happened before this"
