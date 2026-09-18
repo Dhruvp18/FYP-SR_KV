@@ -68,36 +68,69 @@ class LongBenchSample:
         return PROMPTS[self.task].format(context=self.context, input=self.question)
 
 
+def _longbench_data_dir() -> "Path":
+    """Download+extract THUDM/LongBench's data.zip, cached by huggingface_hub.
+
+    Not loaded via `datasets.load_dataset`: that repo ships a loading script
+    (`LongBench.py`), and current `datasets` versions (5.x, what Kaggle images
+    actually have installed) hard-refuse those - confirmed against a real run
+    ("RuntimeError: Dataset scripts are no longer supported, but found
+    LongBench.py"), not a permissions/trust_remote_code issue that can be
+    flagged past. The script itself does nothing but download this same zip
+    and read `data/<task>.jsonl` line by line (verified by reading it), so
+    that's what this does directly - same data, no dependency on a loading
+    mechanism the library has removed.
+    """
+    import zipfile
+    from pathlib import Path
+
+    from huggingface_hub import hf_hub_download
+
+    zip_path = hf_hub_download(
+        repo_id="THUDM/LongBench", repo_type="dataset", filename="data.zip"
+    )
+    extract_dir = Path(zip_path).parent / "extracted"
+    data_dir = extract_dir / "data"
+    if not data_dir.is_dir():
+        with zipfile.ZipFile(zip_path) as zf:
+            zf.extractall(extract_dir)
+    return data_dir
+
+
 def build_samples(
     tasks=("narrativeqa", "qasper", "gov_report", "triviaqa"),
     *,
     n_samples: int = 25,
     max_context_chars: int | None = None,
 ) -> list[LongBenchSample]:
-    """Load the LongBench subset via `datasets` (needs network on first run)."""
-    from datasets import load_dataset
+    """Load the LongBench subset directly from its data.zip (needs network on first run)."""
+    import json
+
+    data_dir = _longbench_data_dir()
 
     out: list[LongBenchSample] = []
     for task in tasks:
         if task not in TASKS:
             raise KeyError(f"unknown LongBench task {task!r}; known: {sorted(TASKS)}")
-        ds = load_dataset("THUDM/LongBench", task, split="test")
-        for idx, row in enumerate(ds):
-            if idx >= n_samples:
-                break
-            context = row["context"]
-            if max_context_chars:
-                context = context[:max_context_chars]
-            out.append(
-                LongBenchSample(
-                    task=task,
-                    sample_idx=idx,
-                    context=context,
-                    question=row["input"],
-                    answers=list(row["answers"]),
-                    max_new_tokens=TASKS[task]["max_new_tokens"],
+        path = data_dir / f"{task}.jsonl"
+        with path.open(encoding="utf-8") as f:
+            for idx, line in enumerate(f):
+                if idx >= n_samples:
+                    break
+                row = json.loads(line)
+                context = row["context"]
+                if max_context_chars:
+                    context = context[:max_context_chars]
+                out.append(
+                    LongBenchSample(
+                        task=task,
+                        sample_idx=idx,
+                        context=context,
+                        question=row["input"],
+                        answers=list(row["answers"]),
+                        max_new_tokens=TASKS[task]["max_new_tokens"],
+                    )
                 )
-            )
     return out
 
 
