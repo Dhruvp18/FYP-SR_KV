@@ -436,14 +436,74 @@ def test_gate5_flags_srkv_losing_to_both_ablations():
     assert any("FLAG" in line for line in lines)
 
 
-def test_gate6_fails_on_oom_rather_than_quietly_dropping_cells():
-    ok = [{"model": "llama3.2-3b", "method": "sr_kv", "budget": 0.3, "accuracy": 0.5,
-           "max_memory_allocated": 1, "tokens_per_sec": 1.0, "cache_stats": {}, "task_id": "t"}]
-    assert gate_phase6(ok, model="llama3.2-3b", budgets=[0.3])[0] == 0
+def _phase6_grid(model="llama3.2-3b", budget=0.3, skip=None):
+    """A complete, correctly-shaped phase6-3b grid (or one cell short of it).
 
-    with_oom = ok + [{"model": "llama3.2-3b", "error": "cuda_oom", "task_id": "t2"}]
-    code, lines = gate_phase6(with_oom, model="llama3.2-3b", budgets=[0.3])
-    assert code == 1 and any("4bit" in line for line in lines)
+    skip, if given, is a (method, context, depth) tuple to omit - used to
+    prove the completeness check actually looks at the real shape instead of
+    accepting any record that happens to share a model name.
+    """
+    from scripts.check_results import DEFAULT_DEPTHS, PHASE6_CONTEXTS, PHASE6_METHODS
+
+    rows = []
+    for method in PHASE6_METHODS:
+        # make_cache() forces budget=1.0 for "full" regardless of the --budget
+        # flag, and check_completeness expects exactly that (its own
+        # method_budgets = [1.0] if method == "full" else budgets) - matching
+        # it here is what real phase6-3b data looks like.
+        cell_budget = 1.0 if method == "full" else budget
+        for context in PHASE6_CONTEXTS:
+            for depth in DEFAULT_DEPTHS:
+                if skip == (method, context, depth):
+                    continue
+                rows.append({
+                    "model": model, "method": method, "budget": cell_budget, "accuracy": 0.5,
+                    "context_len": context, "depth": depth, "sample_idx": 0,
+                    "max_memory_allocated": 1, "tokens_per_sec": 1.0, "cache_stats": {},
+                    "task_id": f"niah/{method}/ctx{context}/depth{depth}/s0",
+                })
+    return rows
+
+
+def test_gate6_requires_the_actual_phase6_3b_shape_not_any_matching_model():
+    """A real run found gate6 printing PASS from 3 completely unrelated
+    records (Phase 1's qwen2.5-3b 4-bit sanity check, ctx=512, method=full) -
+    they shared a model name and the required schema fields, so a plain
+    "any record for this model" filter accepted them as phase6-3b evidence
+    even though phase6-3b itself had never run.
+    """
+    unrelated = [{"model": "m", "method": "full", "budget": 0.3, "accuracy": 1.0,
+                 "context_len": 512, "depth": 50, "sample_idx": i,
+                 "max_memory_allocated": 1, "tokens_per_sec": 1.0, "cache_stats": {},
+                 "task_id": f"niah/full/ctx512/depth50/s{i}"} for i in range(3)]
+    code, lines = gate_phase6(unrelated, model="m", budgets=[0.3], n_samples=1)
+    assert code == 1
+    assert any("INCOMPLETE" in line for line in lines)
+
+
+def test_gate6_passes_on_a_complete_grid_and_catches_one_missing_cell():
+    complete = _phase6_grid()
+    assert gate_phase6(complete, model="llama3.2-3b", budgets=[0.3], n_samples=1)[0] == 0
+
+    one_short = _phase6_grid(skip=("sr_kv", 8192, 50))
+    code, lines = gate_phase6(one_short, model="llama3.2-3b", budgets=[0.3], n_samples=1)
+    assert code == 1
+    assert any("sr_kv" in line and "8192" in line for line in lines)
+
+
+def test_gate6_fails_on_oom_rather_than_quietly_dropping_cells():
+    ok = _phase6_grid()
+    assert gate_phase6(ok, model="llama3.2-3b", budgets=[0.3], n_samples=1)[0] == 0
+
+    method, context, depth = "sr_kv", 8192, 50
+    with_oom = ok + [{"model": "llama3.2-3b", "error": "cuda_oom",
+                      "method": method, "context_len": context, "depth": depth,
+                      "sample_idx": 1, "budget": 0.3, "task_id": "t2"}]
+    code, lines = gate_phase6(with_oom, model="llama3.2-3b", budgets=[0.3], n_samples=1)
+    # the errored cell is still short a successful sample, so completeness
+    # catches it - the specific "retry with 4bit" hint no longer fires here,
+    # but that guidance lives in HANDOFF.md/CLAUDE.md's guardrails instead
+    assert code == 1
 
 
 def test_gate7_rejects_empty_canvases(tmp_path):

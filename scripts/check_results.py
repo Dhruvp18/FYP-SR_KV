@@ -39,6 +39,9 @@ from src.rope_positions import POSITION_MODES  # noqa: E402
 FACTORIAL = ["streaming_llm", "snapkv_unified", "centroid_merge", "sr_kv"]
 DEFAULT_CONTEXTS = [2048, 4096, 8192, 16384]
 DEFAULT_DEPTHS = [0, 25, 50, 75, 100]
+#: phase6-3b's own method/context list (includes "full"; Makefile's own spec)
+PHASE6_METHODS = ["full", "streaming_llm", "snapkv_unified", "centroid_merge", "sr_kv"]
+PHASE6_CONTEXTS = [2048, 4096, 8192]
 DEFAULT_LB_TASKS = ["narrativeqa", "qasper", "gov_report", "triviaqa"]
 
 #: a 1.5B instruct model must clear this on a 512-token retrieval
@@ -334,11 +337,32 @@ def gate_phase5(records, *, model, budgets, n_samples) -> tuple[int, list[str]]:
     return 0, lines + ["PASS"]
 
 
-def gate_phase6(records, *, model, budgets) -> tuple[int, list[str]]:
-    """The 1.5B-tuned config transferred to 3B without OOM or schema drift."""
-    rows = _rows(records, model=model)
-    if not rows:
-        return 1, [f"no records for {model}; run `make phase6-3b`."]
+def gate_phase6(records, *, model, budgets, n_samples=3) -> tuple[int, list[str]]:
+    """The 1.5B-tuned config transferred to 3B without OOM or schema drift.
+
+    Filters to phase6-3b's own (method, context_len) shape before counting
+    anything, rather than "any record for this model" - a plain
+    `_rows(records, model=model)` filter passed on 3 completely unrelated
+    records (Phase 1's qwen2.5-3b 4-bit sanity check, ctx=512) as if they
+    were phase6-3b evidence, because they happened to share a model name and
+    the required schema fields. Confirmed on a real run: gate6 printed PASS
+    while phase6-3b itself had never been run.
+    """
+    rows = [
+        r for r in _rows(records, model=model)
+        if r.get("method") in PHASE6_METHODS and r.get("context_len") in PHASE6_CONTEXTS
+    ]
+    missing = check_completeness(
+        rows, model=model, budgets=budgets, methods=PHASE6_METHODS,
+        contexts=PHASE6_CONTEXTS, depths=DEFAULT_DEPTHS, n_samples=n_samples, lb_tasks=[],
+    )
+    if missing:
+        lines = [f"INCOMPLETE: {len(missing)} missing phase6-3b cell(s)"]
+        lines += [f"  {m}" for m in missing[:10]]
+        if len(missing) > 10:
+            lines.append(f"  ... and {len(missing) - 10} more")
+        lines.append("Re-run `make phase6-3b` - it resumes and fills only the gaps.")
+        return 1, lines
 
     errors = [r for r in rows if "error" in r]
     ok = [r for r in rows if "error" not in r]
@@ -414,7 +438,7 @@ def run_gate(phase: int, records, *, model, budgets, n_samples, figures_dir,
     if phase == 5:
         return gate_phase5(records, model=model, budgets=budgets, n_samples=n_samples)
     if phase == 6:
-        return gate_phase6(records, model=model, budgets=budgets)
+        return gate_phase6(records, model=model, budgets=budgets, n_samples=n_samples)
     if phase == 7:
         return gate_phase7(figures_dir)
     raise ValueError(f"no gate defined for phase {phase}; known: {sorted(GATES)}")
