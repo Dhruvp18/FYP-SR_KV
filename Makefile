@@ -250,9 +250,9 @@ phase6-sweep:
 # activation/logits memory - it under-estimated for LongBench (picked bf16
 # when bf16 didn't actually fit), so do not trust it uncritically here either.
 phase6-3b-scan:
-	$(PY) eval/run.py --method full --model $(MODEL3B) --task niah \
-	  --context_len 8192 --depths 50 --n_samples 2 \
-	  --output $(RESULTS)/diagnostics/phase6_3b_scan.json
+	$(PY) eval/run.py --method full --model $(MODEL3B) --precision $(PRECISION6) \
+	  --task niah --context_len 8192 --depths 50 --n_samples 2 \
+	  --output $(RESULTS)/diagnostics/phase6_3b_scan_$(PRECISION6).json
 
 # No re-sweep on 3B on purpose: the question is whether the 1.5B-tuned config
 # transfers, and re-tuning would answer a different question.
@@ -265,6 +265,23 @@ phase6-3b-scan:
 BUDGETS6 ?= 0.2,0.3
 COMMA := ,
 
+# Explicit, not "auto". choose_precision()'s auto mode sizes weights + the
+# uncompressed KV cache + 2.5 GB headroom and nothing else, so for qwen2.5-3b
+# at 8192 it picks bf16 - and phase6-3b-scan then OOM'd on a real T4 inside
+# SDPA, asking for 4.05 GiB with 3.91 GiB free and 10.65 GiB already in use.
+# The missing term is the attention activation itself, which auto has never
+# modelled; this is the fourth OOM in this project traceable to it.
+#
+# 4bit applies to ALL FIVE methods, not just the `full` baseline that blew up.
+# Precision changes accuracy, so running the baseline at one precision and the
+# compressed conditions at another would confound the exact comparison this
+# phase exists to make - the same reasoning that made recompress_slack=16
+# uniform across methods in Phase 5. 4-bit qwen2.5-3b is already validated:
+# Phase 1 scored 1.000 on it. This is a recorded precision change, not a
+# silent scope reduction: every record carries `precision`, and the transfer
+# claim must be stated as "the 1.5B-tuned config transfers to 4-bit 3B".
+PRECISION6 ?= 4bit
+
 # `full` is uncompressed, so a budget is meaningless for it - make_cache
 # ignores the value. It gets its own invocation at --budget 1.0 because that
 # is the label check_completeness expects for an uncompressed reference, and
@@ -272,12 +289,13 @@ COMMA := ,
 # expensive method once per budget for identical work.
 phase6-3b:
 	$(PY) eval/run.py --method streaming_llm,snapkv_unified,centroid_merge,sr_kv \
-	  --model $(MODEL3B) --task niah \
+	  --model $(MODEL3B) --precision $(PRECISION6) --task niah \
 	  --context_len 2048,4096,8192 --depths 0,25,50,75,100 \
 	  --budget $(BUDGETS6) --n_samples $(SAMPLES) \
 	  --shard $(SHARD) --num_shards $(NSHARDS) \
 	  --output $(RESULTS)/phase6_niah_$(MODEL3B).json
-	$(PY) eval/run.py --method full --model $(MODEL3B) --task niah \
+	$(PY) eval/run.py --method full --model $(MODEL3B) --precision $(PRECISION6) \
+	  --task niah \
 	  --context_len 2048,4096,8192 --depths 0,25,50,75,100 \
 	  --budget 1.0 --n_samples $(SAMPLES) \
 	  --shard $(SHARD) --num_shards $(NSHARDS) \
