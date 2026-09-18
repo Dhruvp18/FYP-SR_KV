@@ -18,7 +18,9 @@ builds a cache by name, hands it to `model.generate()` and reads `get_stats()`
 from __future__ import annotations
 
 import argparse
+import faulthandler
 import json
+import os
 import platform
 import sys
 import time
@@ -311,8 +313,26 @@ def main(argv=None) -> int:
         }
         score_fn = longbench.score
 
+    # A 3B run can stop making progress with no error, no OOM and no further
+    # log output, and the wedged process survives SIGKILL - a `timeout -k 30`
+    # with a 600s limit sat on one for 12.5 hours. Kaggle truncates kernel logs
+    # after a few hundred seconds, so the stall never appears in them either:
+    # every diagnosis so far has come from cancelling the session and reading
+    # the salvaged .jsonl, which says where it stopped but not why.
+    #
+    # This arms a watchdog around each task. If one overruns, faulthandler
+    # dumps every thread's Python stack to stderr and exits, so the log names
+    # the line it died on instead of going silent. Opt-in, because a legitimate
+    # slow task must not be killed: SRKV_WATCHDOG_SECONDS=300.
+    watchdog = float(os.environ.get("SRKV_WATCHDOG_SECONDS", "0") or 0)
+    if watchdog > 0:
+        faulthandler.enable()
+        print(f"[run] watchdog armed: {watchdog:.0f}s per task", flush=True)
+
     started = time.time()
     for i, task in enumerate(todo, 1):
+        if watchdog > 0:
+            faulthandler.dump_traceback_later(watchdog, exit=True)
         sample = samples[task["task_id"]]
         max_new = getattr(sample, "max_new_tokens", args.max_new_tokens)
         prompt = build_prompt(tokenizer, sample.context, sample.question)
@@ -350,6 +370,8 @@ def main(argv=None) -> int:
             "generated_text": result["generated_text"][:400],
         }
         store.append(record)
+        if watchdog > 0:
+            faulthandler.cancel_dump_traceback_later()
         del cache
         free_cuda_memory()
 
