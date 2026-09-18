@@ -167,10 +167,26 @@ phase5:
 # four extra model loads (~seconds each) in exchange for a fresh CUDA
 # context - and therefore a real zeroed allocator - per method. Same
 # per-item-loop pattern phase4/phase6-sweep already use for the same reason.
+# RECOMPRESS_SLACK=16, not the class default of 0: measured on a real run,
+# slack=0 (recompress on every single decode token) causes sr_kv/
+# centroid_merge to degenerate into repetition loops on long generations
+# (40% of gov_report samples) because every one of those hundreds of
+# recompressions fully re-clusters every centroid from scratch. A targeted
+# probe (results/diagnostics/phase5_recompress_slack{16,32}_*.json) confirmed
+# slack=16 fixes it (0/10 degenerate, both values tested equally well; 16
+# chosen as the more conservative of the two). Applied to every method, not
+# just the two that showed the bug: recompress_slack also changes eviction
+# timing for streaming_llm/snapkv_unified, and this project's whole ablation
+# design rests on changing exactly one thing at a time between conditions -
+# silently running the baselines at slack=0 while sr_kv/centroid_merge use
+# slack=16 would confound the comparison instead of fixing it.
+RECOMPRESS_SLACK ?= 16
+
 phase5-longbench:
 	for method in full streaming_llm snapkv_unified centroid_merge sr_kv; do \
 	  $(PY) eval/run.py --method $$method \
 	    --model $(MODEL) --task longbench --budget $(BUDGET) --n_samples 25 \
+	    --recompress_slack $(RECOMPRESS_SLACK) \
 	    --shard $(SHARD) --num_shards $(NSHARDS) \
 	    --output $(RESULTS)/phase5_longbench_$(MODEL).json || exit 1; \
 	done
