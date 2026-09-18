@@ -279,6 +279,25 @@ def test_merge_outputs_sorts_results_and_figures(tmp_path):
     assert not (results / "unrelated.txt").exists()
 
 
+def test_merge_outputs_preserves_subdirectories(tmp_path):
+    """Flattening to just the filename silently undid the fix that moved
+    phase4-scan's output to results/diagnostics/: the very next pull would
+    flatten .../results/diagnostics/x.json back to results_dir/x.json,
+    re-introducing the exact task_id/run_key collision that move exists to
+    prevent (load_records globs results/ non-recursively).
+    """
+    pulled = tmp_path / "pulled"
+    (pulled / "results" / "diagnostics").mkdir(parents=True)
+    (pulled / "results" / "diagnostics" / "scan.json").write_text("{}", encoding="utf-8")
+    (pulled / "results" / "a.jsonl").write_text("{}", encoding="utf-8")
+
+    results, figures = tmp_path / "results", tmp_path / "figures"
+    assert merge_outputs(pulled, results, figures) == 2
+    assert (results / "diagnostics" / "scan.json").exists()
+    assert (results / "a.jsonl").exists()
+    assert not (results / "scan.json").exists(), "must not flatten into the top level"
+
+
 # ---------------------------------------------------------------------------
 # phase gates
 # ---------------------------------------------------------------------------

@@ -67,11 +67,16 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--niah_corpus", default="synthetic", choices=["synthetic", "pg"])
     p.add_argument("--longbench_tasks", type=_csv(str),
                    default=["narrativeqa", "qasper", "gov_report", "triviaqa"])
-    p.add_argument("--longbench_max_context_tokens", type=int, default=8192,
+    p.add_argument("--longbench_max_context_tokens", type=int, default=4096,
                    help="LongBench documents run far past this project's 8k-16k scope "
                         "untruncated (narrativeqa OOM'd a T4 at 43.89 GiB during prefill, "
                         "before any cache eviction ever ran) - truncate to this many tokens, "
-                        "keeping both ends (LongBench's own convention). 0 disables truncation.")
+                        "keeping both ends (LongBench's own convention). Default is 4096, not "
+                        "8192: measured on real hardware, every 'full' (uncompressed) document "
+                        "truncated to 8192 tokens used 11.9-13.5 GiB on a 14.56 GiB T4 - real "
+                        "documents in that neighborhood OOM'd outright, others merely had no "
+                        "safety margin. Scaling is roughly linear (~1.5 GiB/1000 tokens), so "
+                        "4096 leaves real headroom. 0 disables truncation.")
     p.add_argument("--max_new_tokens", type=int, default=32)
 
     # policy hyperparameters (Phase 6 sweeps these)
@@ -239,6 +244,7 @@ def main(argv=None) -> int:
             task=args.task,
             max_new_tokens=args.max_new_tokens,
             corpus=args.niah_corpus,
+            longbench_max_context_tokens=args.longbench_max_context_tokens,
             **overrides,
         )
         for task in tasks

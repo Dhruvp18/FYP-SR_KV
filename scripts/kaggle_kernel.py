@@ -393,18 +393,33 @@ def cmd_pull(args) -> int:
 
 
 def merge_outputs(out_dir: Path, results_dir: Path, figures_dir: Path) -> int:
-    """Copy pulled .jsonl/.json/.png back into the repo, skipping what we have."""
+    """Copy pulled .jsonl/.json/.png back into the repo, skipping what we have.
+
+    Preserves the path *relative to* the results/figures directory component
+    (e.g. .../results/diagnostics/x.json lands at results_dir/diagnostics/
+    x.json) instead of flattening to just the filename. Flattening silently
+    defeated the fix that moved diagnostic-run output (e.g. phase4-scan) out
+    of results/ so it can't contaminate a gate's directory-wide aggregation
+    (load_records globs non-recursively) - every subsequent pull would
+    flatten it right back to the top level, re-introducing exactly the
+    collision that move was meant to prevent.
+    """
     results_dir.mkdir(parents=True, exist_ok=True)
     figures_dir.mkdir(parents=True, exist_ok=True)
     copied = 0
     for path in out_dir.rglob("*"):
         if not path.is_file():
             continue
-        if path.suffix in (".jsonl", ".json") and "results" in path.parts:
-            shutil.copy(path, results_dir / path.name)
+        parts = path.parts
+        if path.suffix in (".jsonl", ".json") and "results" in parts:
+            dest = results_dir / Path(*parts[parts.index("results") + 1 :])
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy(path, dest)
             copied += 1
-        elif path.suffix == ".png" and "figures" in path.parts:
-            shutil.copy(path, figures_dir / path.name)
+        elif path.suffix == ".png" and "figures" in parts:
+            dest = figures_dir / Path(*parts[parts.index("figures") + 1 :])
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy(path, dest)
             copied += 1
     return copied
 
