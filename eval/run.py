@@ -91,6 +91,14 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--centroid_frac", type=float, default=None)
     p.add_argument("--cluster_mode", default=None, choices=[None, "kmeans", "temporal_chunk"])
     p.add_argument("--n_sink", type=int, default=None)
+    p.add_argument("--recompress_slack", type=int, default=None,
+                   help="delay compression until the cache is this many tokens over budget, "
+                        "instead of recompressing on every single new token during decode. "
+                        "Default (0, i.e. every token) means a long generation with a tight "
+                        "budget fully re-clusters every centroid from scratch on every decode "
+                        "step - measured to cause repetition collapse on 512-token generations "
+                        "(40% of gov_report samples degenerated for sr_kv/centroid_merge, 0% "
+                        "for non-clustering methods). Try e.g. 16 to batch re-clustering.")
 
     p.add_argument("--precision", default="auto", choices=["auto", "bf16", "fp16", "4bit"])
     p.add_argument("--shard", type=int, default=0)
@@ -155,7 +163,8 @@ def cache_overrides(args, defaults: dict) -> dict:
     """CLI flags win; then configs/defaults.yaml; then the class defaults."""
     out: dict = {}
     for key in ("alpha", "beta", "lam", "obs_window", "pool_kernel", "n_centroids",
-                "centroid_frac", "cluster_mode", "n_sink", "rope_position_mode"):
+                "centroid_frac", "cluster_mode", "n_sink", "rope_position_mode",
+                "recompress_slack"):
         value = getattr(args, key)
         if value is None:
             value = defaults.get(key)

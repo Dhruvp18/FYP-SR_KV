@@ -24,7 +24,7 @@ NSHARDS ?= 1
 
 .PHONY: help test configs \
         phase1 phase1-4bit phase2 phase3 phase4 phase4-scan freeze-rope \
-        phase5 phase5-longbench phase6-sweep phase6-3b phase7 \
+        phase5 phase5-longbench phase5-recompress-probe phase6-sweep phase6-3b phase7 \
         gate1 gate2 gate3 gate4 gate5 gate6 gate7 \
         check-complete check-ablation plots report_artifacts clean-figures
 
@@ -173,6 +173,30 @@ phase5-longbench:
 	    --model $(MODEL) --task longbench --budget $(BUDGET) --n_samples 25 \
 	    --shard $(SHARD) --num_shards $(NSHARDS) \
 	    --output $(RESULTS)/phase5_longbench_$(MODEL).json || exit 1; \
+	done
+
+# Diagnostic, not a gated phase: real gov_report run measured sr_kv/
+# centroid_merge degenerating into repetition loops on 10/25 samples each
+# (0/25 for the non-clustering methods) - 512-token generations against a
+# tight budget mean the cache exceeds budget on nearly every decode step, and
+# recompress_slack=0 (the only value ever tried) means every one of those
+# steps fully re-clusters every centroid from scratch (fresh k-means init,
+# not continuing the previous step's assignment), rather than the model ever
+# seeing a stable KV history between compressions. Only the two clustering
+# methods (use_clustering=True) are affected; only long generations expose
+# it (0/25 at 32 tokens, up to 10/25 at 512). This probes whether batching
+# compression with recompress_slack fixes it, on the one task and the two
+# methods that showed the problem, at reduced samples for a fast answer
+# before committing the full sweep to a slack value.
+phase5-recompress-probe:
+	for slack in 16 32; do \
+	  for method in centroid_merge sr_kv; do \
+	    $(PY) eval/run.py --method $$method --model $(MODEL) --task longbench \
+	      --longbench_tasks gov_report --budget $(BUDGET) --n_samples 10 \
+	      --recompress_slack $$slack \
+	      --output $(RESULTS)/diagnostics/phase5_recompress_slack$${slack}_$${method}.json \
+	      || exit 1; \
+	  done; \
 	done
 
 gate5:
