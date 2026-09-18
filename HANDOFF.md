@@ -107,49 +107,56 @@ attention score, consistent with SR-KV's scoring design elsewhere), explicitly
 re-open this without a real reason; two properly-powered experiments already
 answered it.
 
-**Phase 5 — NIAH half not started. LongBench half: RUNNING RIGHT NOW under
-`chaitrasamant`, expect ~4 hours from launch.** See "Live kernels" below.
-Long, bug-riddled story below in "What actually happened," but the short
-version: LongBench needed five separate real-bug fixes to run cleanly, and
-even the first clean 500/500 run turned up a genuine correctness bug
-(repetition collapse in `sr_kv`/`centroid_merge` on long generations) that's
-now fixed and being re-verified in the currently-running kernel.
+**Phase 5 — LongBench half: DONE, verified, committed.** NIAH half: not
+started. LongBench needed five separate real-bug fixes to run cleanly (see
+"What actually happened" below), and even the first clean 500/500 run turned
+up a genuine correctness bug (repetition collapse in `sr_kv`/`centroid_merge`
+on long generations, fixed via `recompress_slack=16`). The *re-verified* run
+is clean: 500/500 records, zero errors, **zero degenerate generations across
+every method and every task** (checked by reading actual generated text, not
+just accuracy — see bug #13/#14 below for why that check matters here).
+Real comparison (overall mean, all 4 tasks): `full`=0.255,
+`snapkv_unified`=0.249, `centroid_merge`=0.248, `sr_kv`=0.244,
+`streaming_llm`=0.215 — centroid-merging is essentially tied with hard
+eviction, not a clean win, reported honestly rather than spun. `gate5`
+correctly reports incomplete (exit 1): that gate checks the NIAH grid, which
+hasn't been run — LongBench being done doesn't satisfy it.
 
-**Phase 6 — RUNNING RIGHT NOW under `chaitrasamant`** (the alpha/beta sweep,
-at `budget=0.2` not the Makefile's default 0.3 — see why below). `phase6-3b`
-(transfer to qwen2.5-3b) has **not** been run yet and has a known,
-unaddressed OOM risk — see "What's actually left to do."
+**Phase 6 — alpha/beta sweep: DONE, verified, committed** (at `budget=0.2`,
+not the Makefile's default 0.3 — see why below). Clean, monotonic result:
+`beta=0` (no recency weighting) hits perfect NIAH accuracy at any `alpha`;
+accuracy degrades as `beta` increases (down to 0.367 at alpha=0.5/beta=0.6).
+Makes sense mechanistically — NIAH's needle depth is randomized, so a
+recency bias fights against retrieving an early-placed needle. `phase6-3b`
+(transfer to qwen2.5-3b) has **not** been run and has a known, unaddressed
+OOM risk — `make phase6-3b-scan` first (see "What's actually left to do").
+**Also**: `gate6` had a real false-positive bug, found and fixed while
+checking this data (see bug #15 below) — don't trust a `gate6` PASS from
+before this fix without rerunning it.
 
-**Phase 7 — not started.** Don't run it until Phase 5/6 have real, complete
-data; it'll just render figures from whatever's in `results/`, gaps and all.
+**Phase 7 — not started.** Don't run it until Phase 5's NIAH half and
+Phase 6's 3B transfer have real, complete data; it'll just render figures
+from whatever's in `results/`, gaps and all.
 
-### Live kernels — check these before doing anything else
+### Kaggle account note
 
-```bash
-kaggle kernels status chaitrasamant/sr-kv-phase5   # LongBench, recompress_slack=16 fix
-kaggle kernels status chaitrasamant/sr-kv-phase6   # alpha/beta sweep at budget=0.2
-```
-
-Both were pushed by Chaitra's agent session and were still `RUNNING` as of
-this handoff. **You cannot pull their results with your own Kaggle
-credentials** — they're private kernels under `chaitrasamant`'s account.
-Do `git pull origin main` first, always — if Chaitra's session is still
-active when you start, it'll have pushed the results the moment each kernel
-completes and been gated, and you'll see it in the commit log rather than
-needing to guess.
-
-If both have finished and results are already committed, and you want to
-verify or continue from there:
+Both Phase 5 and Phase 6 above ran under `chaitrasamant`'s Kaggle account —
+private kernels, so you can't query or pull them with your own credentials.
+That's fine, their results are already verified and committed to `main` (see
+commit log). This matters for what *you* run next: your own kernels will be
+under your own username, and this account's **2-concurrent-GPU-session cap**
+(see setup section above) applies per-account, so you're not competing with
+`chaitrasamant`'s quota, just your own.
 
 ```bash
 git pull origin main
-git log --oneline -15   # see exactly what landed
+git log --oneline -20   # see exactly what's landed
 python -m pytest -q     # always, before touching anything
 ```
 
 ### What actually happened this session (why the code looks the way it does)
 
-Fourteen distinct real bugs were found and fixed, in roughly this order.
+Fifteen distinct real bugs were found and fixed, in roughly this order.
 Skim this before touching `src/`, `eval/`, or `scripts/kaggle_kernel.py` —
 several of these look like they'd be easy to "fix" a different, more obvious
 way, and that obvious way was already tried and shown to be wrong.
@@ -290,6 +297,18 @@ way, and that obvious way was already tried and shown to be wrong.
     (16-32 tokens) never showed the bug at slack=0, and those results are
     already gated.
 
+15. **`gate6` false-positive (`scripts/check_results.py`)** — found while
+    checking whether the Phase 6 sweep data satisfied `gate6`. It printed
+    `PASS` using 3 completely unrelated records — Phase 1's qwen2.5-3b 4-bit
+    sanity check (`method=full`, `ctx=512`) — because it only filtered by
+    `model`, never checking *which* method/context those records were
+    actually for. `phase6-3b` itself had never been run; the gate should
+    have said so. Same class of bug as #5 (gate rigor). Fixed: `gate6` now
+    runs a real completeness check against `phase6-3b`'s actual
+    (method, context, depth) grid before counting anything as evidence — the
+    same rigor already applied to `gate4`/`gate5`. Confirmed against real
+    data: now correctly reports "INCOMPLETE: 75 missing cells."
+
 Also worth knowing: **while Chaitra's session was between windows, a
 different tool (GitHub Copilot) independently pushed a `phase5` (full NIAH)
 kernel to the same Kaggle account and it failed partway through** (OOM on
@@ -304,14 +323,8 @@ paranoia.
 
 ### What's actually left to do
 
-1. **Let Phase 5 (LongBench, `chaitrasamant`) and Phase 6 (sweep,
-   `chaitrasamant`) finish.** Check status with the commands above. Once
-   Phase 5 lands: verify it the way bug #13 was found — don't just check the
-   gate/accuracy, spot-check actual generated text for `sr_kv`/
-   `centroid_merge` on `gov_report` to confirm no repetition collapse
-   remains. Once Phase 6 lands: `python scripts/check_results.py gate
-   --phase 6 --model qwen2.5-3b --budget 0.2` (note: budget 0.2 to match
-   what was actually run, not the Makefile default 0.3).
+1. ~~Let Phase 5 LongBench and Phase 6 sweep finish~~ — **done**, both
+   verified and committed (see above). Nothing to do here.
 
 2. **Before running `phase6-3b`** (transfer to qwen2.5-3b, not yet run): run
    `make phase6-3b-scan` first (2 cheap samples, `full` only, ctx=8192). This
