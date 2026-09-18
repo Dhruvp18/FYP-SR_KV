@@ -15,6 +15,7 @@ so a 4-bit run can never be mistaken for a bf16 run when reading results.
 from __future__ import annotations
 
 import logging
+import os
 import warnings
 
 import torch
@@ -52,7 +53,41 @@ _PARAMS_B = {
 }
 
 
+#: env var holding "alias=path" pairs, comma separated, e.g.
+#: SRKV_MODEL_PATHS="qwen2.5-3b=/kaggle/input/qwen2.5/transformers/3b-instruct/1"
+MODEL_PATHS_ENV = "SRKV_MODEL_PATHS"
+
+
+def _local_model_overrides() -> dict[str, str]:
+    raw = os.environ.get(MODEL_PATHS_ENV, "")
+    out: dict[str, str] = {}
+    for item in raw.split(","):
+        item = item.strip()
+        if not item or "=" not in item:
+            continue
+        alias, path = item.split("=", 1)
+        out[alias.strip().lower()] = path.strip()
+    return out
+
+
 def resolve_model_id(name: str) -> str:
+    """Alias -> HF repo id, unless a local path is pinned for that alias.
+
+    The override exists because downloading qwen2.5-3b from the Hub
+    unauthenticated is rate-limited hard enough to consume an entire Kaggle
+    session: one run sat at "Fetching 2 files: 0%" for 7.5 hours, and later
+    cycles spent their whole budget on download retries and banked zero tasks.
+    Kaggle mirrors the same weights as a mounted dataset, which is local disk
+    and has no rate limit.
+
+    It deliberately maps alias -> path rather than letting callers pass the
+    path as --model: `args.model` is what every record, every run_key and
+    every gate filter carries, so a path there would rename the model to a
+    mount point and split the results into two incomparable groups.
+    """
+    override = _local_model_overrides().get(name.lower())
+    if override:
+        return override
     return MODEL_ALIASES.get(name.lower(), name)
 
 

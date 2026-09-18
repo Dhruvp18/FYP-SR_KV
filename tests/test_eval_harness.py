@@ -250,3 +250,31 @@ def test_gate6_refuses_to_mix_precisions():
     code, lines = gate_phase6(records, model="qwen2.5-3b", budgets=[0.2], n_samples=1)
     assert code == 1
     assert any("refusing to mix precisions" in line for line in lines)
+
+
+def test_local_model_path_override_keeps_the_alias_in_records(monkeypatch):
+    """A Kaggle-mounted mirror must not rename the model in the results.
+
+    Downloading qwen2.5-3b from the Hub unauthenticated cost one entire
+    session (7.5h at "Fetching 2 files: 0%") and starved two later cycles.
+    Kaggle mirrors the same weights on local disk. The override has to map
+    alias -> path rather than being passed as --model, because args.model is
+    what every record, run_key and gate filter carries: a path there would
+    split the 3B results into two incomparable groups mid-phase.
+    """
+    from src.models import MODEL_PATHS_ENV, resolve_model_id
+
+    monkeypatch.delenv(MODEL_PATHS_ENV, raising=False)
+    assert resolve_model_id("qwen2.5-3b") == "Qwen/Qwen2.5-3B-Instruct"
+
+    monkeypatch.setenv(
+        MODEL_PATHS_ENV,
+        "qwen2.5-3b=/kaggle/input/qwen2.5/transformers/3b-instruct/1",
+    )
+    assert resolve_model_id("qwen2.5-3b") == "/kaggle/input/qwen2.5/transformers/3b-instruct/1"
+    # untouched aliases still resolve normally
+    assert resolve_model_id("qwen2.5-1.5b") == "Qwen/Qwen2.5-1.5B-Instruct"
+
+    # malformed entries are ignored rather than crashing a run
+    monkeypatch.setenv(MODEL_PATHS_ENV, "garbage,,qwen2.5-3b=/p/x")
+    assert resolve_model_id("qwen2.5-3b") == "/p/x"
