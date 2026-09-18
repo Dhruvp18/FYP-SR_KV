@@ -2,14 +2,24 @@
 #
 # eval/run.py reads this file; an explicit CLI flag always wins over it.
 #
-# rope_position_mode is the one value here that is meant to be decided by
-# EXPERIMENT, not by taste: Phase 4 sweeps all three conventions on NIAH and
-# `scripts/freeze_rope_mode.py` rewrites this file with the winner and flips
-# rope_position_mode_frozen to true. Until that has happened, the value below
-# is a placeholder and every SR-KV number produced with it is provisional.
+# rope_position_mode: Phase 4 ran twice, both properly powered, and found no
+# significant difference between the three conventions:
+#   - budget=0.3 (n=25/mode): ceiling effect, all three at 1.000 (no power).
+#   - budget=0.2 (n=100/mode, the discriminating budget found by a separate
+#     scan): latest=76/100, earliest=76/100, attn_weighted=77/100.
+#     Fisher exact p=1.000 on best vs worst - not underpowered, genuinely
+#     indistinguishable. freeze_rope_mode.py correctly refuses to call this
+#     an empirical win (see its --budget 0.2 output).
+# `attn_weighted` is kept below as a PRINCIPLED default, not an empirical
+# one: it weights cluster members by attention score, consistent with how
+# every other scoring decision in SR-KV works, rather than an arbitrary
+# pick among three options that measured the same. rope_position_mode_frozen
+# is true because a decision has been made and later phases should stop
+# treating this as pending - not because the data picked a winner.
+# Full story: HANDOFF.md, "READ THIS FIRST" section, 2026-09-17/18 session.
 rope_position_mode: attn_weighted
-rope_position_mode_frozen: false
-rope_position_mode_evidence: "not yet measured - run Phase 4"
+rope_position_mode_frozen: true
+rope_position_mode_evidence: "not empirically distinguished: latest=0.760, earliest=0.760, attn_weighted=0.770 (n=100/mode, budget=0.2, ctx=8192, Fisher exact p=1.000). attn_weighted kept as a principled default, not a measured winner."
 
 # scoring
 alpha: 1.0
