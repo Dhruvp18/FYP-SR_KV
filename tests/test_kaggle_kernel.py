@@ -116,6 +116,32 @@ def test_notebook_is_valid_json_and_thin(phase):
         assert forbidden not in source, f"notebook contains project logic: {forbidden}"
 
 
+def test_notebook_treats_gate_exit_2_as_not_a_crash():
+    """Exit 2 ("needs a human look") must not fail the kernel.
+
+    Phase 4's real run hit exactly this: gate4 correctly found the RoPE
+    modes statistically indistinguishable (p=0.867, later p=1.000 once a
+    separate dedup bug was fixed) and exited 2. The old notebook piped every
+    command through one check=True sh() call, so that legitimate, informative
+    exit code showed up on Kaggle as KernelWorkerStatus.ERROR - indistinguishable
+    from an actual crash - even though 300 real records had already been
+    produced and gate4 had done exactly its job. Exit 1 must still be fatal;
+    only 2 gets the pass.
+    """
+    nb = build_notebook(4, repo="r", model="qwen2.5-1.5b", model3b="qwen2.5-3b",
+                        budget=0.2, samples=3, shard=0, num_shards=1)
+    source = "\n".join("".join(cell["source"]) for cell in nb["cells"])
+    assert "gate_rc = sh(" in source and "check=False" in source
+    assert "if gate_rc == 1:" in source and "raise SystemExit" in source
+    assert "elif gate_rc == 2:" in source
+    # freeze-rope (the after-gate step) is only reachable when gate_rc is
+    # neither 1 nor 2 - i.e. the else branch
+    freeze_line = next(l for l in source.splitlines() if "make freeze-rope" in l)
+    assert freeze_line.strip().startswith("sh(") and freeze_line.startswith("    "), (
+        "freeze-rope must be indented under the gate's else branch, not run unconditionally"
+    )
+
+
 def test_notebook_restores_previous_results_before_running():
     nb = build_notebook(5, repo="r", model="m", model3b="m3", budget=0.3, samples=3,
                         shard=0, num_shards=1)

@@ -193,3 +193,34 @@ def test_plot_loader_deduplicates_and_drops_errors(tmp_path):
 
 def test_plots_fail_loudly_on_an_empty_results_dir(tmp_path):
     assert plots_main(["--results-dir", str(tmp_path), "--figures-dir", str(tmp_path / "f")]) == 1
+
+
+def test_load_records_ignores_subdirectories(tmp_path):
+    """Diagnostic runs (e.g. `make phase4-scan`) write to results/diagnostics/
+    specifically so they cannot collide with a real sweep's task_id/run_key
+    space when a gate aggregates "everything in results/". This happened for
+    real: a 3-sample budget scan and a 20-sample ablation both measured
+    sr_kv/attn_weighted/budget=0.2, and the directory-wide dedup in
+    `load_records` silently let the scan's value overwrite the sweep's on one
+    of the 15 colliding cells - based on alphabetical file order, not on which
+    run was the intended measurement. `Path.glob` is non-recursive, so a
+    subdirectory is the whole fix; this pins that down as intentional
+    behavior rather than an accident someone "cleans up" later.
+    """
+    (tmp_path / "a.jsonl").write_text(
+        json.dumps({"task_id": "t", "run_key": "real", "method": "sr_kv", "model": "m",
+                    "budget": 0.2, "context_len": 8192, "depth": 50, "sample_idx": 0,
+                    "accuracy": 1.0}) + "\n",
+        encoding="utf-8",
+    )
+    diag = tmp_path / "diagnostics"
+    diag.mkdir()
+    (diag / "scan.jsonl").write_text(
+        json.dumps({"task_id": "t", "run_key": "real", "method": "sr_kv", "model": "m",
+                    "budget": 0.2, "context_len": 8192, "depth": 50, "sample_idx": 0,
+                    "accuracy": 0.0}) + "\n",
+        encoding="utf-8",
+    )
+    records = load_records(tmp_path)
+    assert len(records) == 1
+    assert records[0]["accuracy"] == 1.0, "a file outside results/ leaked into the aggregate"

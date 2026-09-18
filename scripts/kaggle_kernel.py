@@ -138,6 +138,15 @@ def build_notebook(phase: int, *, repo: str, model: str, model3b: str, budget: f
     commands = build_commands(phase, model=model, model3b=model3b, budget=budget,
                               samples=samples, shard=shard, num_shards=num_shards,
                               targets=targets, skip_gate=skip_gate, extra_vars=extra_vars)
+    # The gate command (if present) is always the one right after the phase's
+    # own targets - see build_commands. Split it out so its exit code 2
+    # ("needs a human look" - a negative or non-significant finding, not a
+    # crash) can be handled separately from a real failure. Every other
+    # command still uses the blunt check=True/raise-on-any-nonzero path.
+    n_pre = len(targets if targets is not None else spec["targets"])
+    run_commands, gate_command, after_commands = commands[:n_pre], None, []
+    if not skip_gate:
+        gate_command, after_commands = commands[n_pre], commands[n_pre + 1:]
 
     def md(*lines):
         return {"cell_type": "markdown", "metadata": {}, "source": [f"{line}\n" for line in lines]}
@@ -226,8 +235,35 @@ def build_notebook(phase: int, *, repo: str, model: str, model3b: str, budget: f
            "",
            "Resumable: every finished task is fsynced to `results/*.jsonl`, so if this session is",
            "killed, re-running this same kernel continues from where it stopped."),
-        code(*[f"sh({command!r})" for command in commands]),
+        code(*[f"sh({command!r})" for command in run_commands]),
+    ]
 
+    if gate_command is not None:
+        after_lines = [f"    sh({c!r})" for c in after_commands] or ["    pass"]
+        cells.append(
+            md("## Gate",
+               "",
+               "Exit 0 = proceed (runs the after-gate step below, if any). Exit 1 = a real",
+               "failure - fails the kernel, same as any other command here. Exit 2 = \"needs a",
+               "human look\": a negative or statistically non-significant finding, not a crash -",
+               "this is the pipeline working as designed (see CLAUDE.md / HANDOFF.md), so it does",
+               "NOT fail the kernel, it just skips the after-gate step and prints why.")
+        )
+        cells.append(code(
+            f"gate_rc = sh({gate_command!r}, check=False)",
+            "if gate_rc == 1:",
+            f"    raise SystemExit(f'FAILED ({{gate_rc}}): {gate_command}')",
+            "elif gate_rc == 2:",
+            "    print()",
+            "    print('=' * 70)",
+            "    print('GATE EXITED 2: needs a human look - see the gate output above.')",
+            "    print('This is not a crash. Skipping the after-gate step (if any).')",
+            "    print('=' * 70)",
+            "else:",
+            *after_lines,
+        ))
+
+    cells += [
         md("## Results are the kernel output",
            "",
            "Everything under `/kaggle/working` becomes this kernel's output, so `results/` and",

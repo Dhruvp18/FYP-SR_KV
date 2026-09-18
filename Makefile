@@ -118,12 +118,23 @@ phase4:
 # sample size, so the budget has to be found before spending quota on power.
 # One mode is enough to locate it - the modes are what we are trying to tell
 # apart, not what sets the difficulty.
+#
+# Output goes to results/diagnostics/, not results/, on purpose. A scan cell
+# and a real-sweep cell can land on the identical (method, budget, mode,
+# depth, sample_idx) task_id/run_key - and did: the first phase4 run at
+# budget=0.2 collided with this scan's own budget=0.2 probe on 15/100 cells,
+# and load_records' directory-wide dedup silently let the n=3 scan value
+# overwrite the n=20 sweep value on one of them (alphabetical file order, no
+# recency check) - moving accuracy from 76/100 to 77/100 by chance rather than
+# by measurement. load_records globs non-recursively, so a subdirectory is
+# enough to keep a diagnostic run out of anything a gate aggregates.
 phase4-scan:
+	mkdir -p $(RESULTS)/diagnostics
 	for b in 0.15 0.20 0.25; do \
 	  $(PY) eval/run.py --method sr_kv --model $(MODEL) --task niah \
 	    --context_len 8192 --budget $$b --n_samples 3 \
 	    --depths 0,25,50,75,100 --rope_position_mode attn_weighted \
-	    --output $(RESULTS)/phase4_scan_b$$b.json || exit 1; \
+	    --output $(RESULTS)/diagnostics/phase4_scan_b$$b.json || exit 1; \
 	done
 
 gate4:
