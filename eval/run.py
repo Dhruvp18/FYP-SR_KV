@@ -254,6 +254,21 @@ def main(argv=None) -> int:
             max_new_tokens=args.max_new_tokens,
             corpus=args.niah_corpus,
             longbench_max_context_tokens=args.longbench_max_context_tokens,
+            # Precision changes the numbers, so it defines the unit of work the
+            # same way budget and context do. Without it, a 4-bit record makes
+            # `is_done` skip the bf16 task with the same task_id, and
+            # `load_records` keeps both as if they were samples of one
+            # condition. Phase 6 hit exactly this: 57 salvaged 4-bit records
+            # sat in results/ when the phase moved to bf16. This is the same
+            # fix already applied to longbench_max_context_tokens.
+            #
+            # `args.precision` is the *requested* value, not the resolved one -
+            # the model is loaded further down, after these keys exist. So
+            # "auto" hashes as "auto" and two "auto" runs that resolve
+            # differently on different GPUs still collide. Every phase that
+            # cares passes an explicit precision, which is why that is not
+            # papered over here with a second model load.
+            precision=args.precision,
             **overrides,
         )
         for task in tasks

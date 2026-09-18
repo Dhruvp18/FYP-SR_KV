@@ -485,17 +485,27 @@ def test_gate6_passes_on_a_complete_grid_and_catches_one_missing_cell():
     complete = _phase6_grid()
     assert gate_phase6(complete, model="llama3.2-3b", budgets=[0.3], n_samples=1)[0] == 0
 
-    one_short = _phase6_grid(skip=("sr_kv", 8192, 50))
+    # Reference the gate's own context list rather than a literal. These
+    # hardcoded 8192 when the 3B grid still had an 8192 column; dropping that
+    # column (bf16 does not fit and 4-bit hangs the GPU) silently turned the
+    # "missing cell" into a cell the gate no longer looks at, so both tests
+    # passed a complete grid and asserted failure.
+    from scripts.check_results import PHASE6_CONTEXTS
+
+    longest = PHASE6_CONTEXTS[-1]
+    one_short = _phase6_grid(skip=("sr_kv", longest, 50))
     code, lines = gate_phase6(one_short, model="llama3.2-3b", budgets=[0.3], n_samples=1)
     assert code == 1
-    assert any("sr_kv" in line and "8192" in line for line in lines)
+    assert any("sr_kv" in line and str(longest) in line for line in lines)
 
 
 def test_gate6_fails_on_oom_rather_than_quietly_dropping_cells():
     ok = _phase6_grid()
     assert gate_phase6(ok, model="llama3.2-3b", budgets=[0.3], n_samples=1)[0] == 0
 
-    method, context, depth = "sr_kv", 8192, 50
+    from scripts.check_results import PHASE6_CONTEXTS
+
+    method, context, depth = "sr_kv", PHASE6_CONTEXTS[-1], 50
     with_oom = ok + [{"model": "llama3.2-3b", "error": "cuda_oom",
                       "method": method, "context_len": context, "depth": depth,
                       "sample_idx": 1, "budget": 0.3, "task_id": "t2"}]

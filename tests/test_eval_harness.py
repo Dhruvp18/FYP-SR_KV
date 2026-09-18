@@ -203,3 +203,50 @@ def test_summarize_groups_by_method_and_budget():
     assert summary["sr_kv|budget=0.3|4096"]["accuracy"] == 0.5
     assert summary["sr_kv|budget=0.3|4096"]["n"] == 2
     assert summary["_errors"] == 1
+
+
+def test_precision_is_part_of_the_run_key(tmp_path):
+    """A 4-bit record must not mark the bf16 version of that task as done.
+
+    Phase 6 ran 4-bit first (bf16 OOM'd on a 3B model at 8192), then moved to
+    bf16 when 4-bit turned out to hang the GPU - leaving 57 four-bit records
+    in results/. Without precision in the key those records share task_id AND
+    run_key with their bf16 counterparts, so `is_done` skips the bf16 task and
+    the run silently reports a complete grid it never measured. Same class as
+    threading longbench_max_context_tokens through the key.
+    """
+    import eval.run as run_module
+
+    def keys_for(precision):
+        args = _args(*_base_cmd(tmp_path / "p.json"), "--precision", precision)
+        defaults = run_module.load_defaults()
+        overrides = run_module.cache_overrides(args, defaults)
+        tasks = run_module.build_task_list(args)
+        return {
+            run_key(
+                method=t["method"], model="tiny", budget=t["budget"], task=args.task,
+                max_new_tokens=args.max_new_tokens, corpus=args.niah_corpus,
+                longbench_max_context_tokens=args.longbench_max_context_tokens,
+                precision=args.precision, **overrides,
+            )
+            for t in tasks
+        }
+
+    bf16, four_bit = keys_for("bf16"), keys_for("4bit")
+    assert bf16 and four_bit
+    assert not (bf16 & four_bit), "bf16 and 4bit tasks collide on run_key"
+
+
+def test_gate6_refuses_to_mix_precisions():
+    from scripts.check_results import gate_phase6
+
+    def rec(precision, method, context_len, depth, sample_idx, budget):
+        return {"model": "qwen2.5-3b", "method": method, "budget": budget,
+                "context_len": context_len, "depth": depth, "sample_idx": sample_idx,
+                "accuracy": 1.0, "precision": precision, "max_memory_allocated": 1,
+                "tokens_per_sec": 1.0, "cache_stats": {}, "task_id": f"t{depth}{sample_idx}"}
+
+    records = [rec("bf16", "sr_kv", 2048, 0, 0, 0.2), rec("4bit", "sr_kv", 2048, 0, 1, 0.2)]
+    code, lines = gate_phase6(records, model="qwen2.5-3b", budgets=[0.2], n_samples=1)
+    assert code == 1
+    assert any("refusing to mix precisions" in line for line in lines)

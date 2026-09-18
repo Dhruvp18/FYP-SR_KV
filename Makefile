@@ -146,10 +146,10 @@ BETA4  ?= 0.3
 LAM4   ?= 0.001
 
 gate4:
-	$(PY) scripts/check_results.py gate --phase 4 --model $(MODEL) --budget $(BUDGET) 	  --alpha $(ALPHA4) --beta $(BETA4) --lam $(LAM4)
+	$(PY) scripts/check_results.py gate --phase 4 --model $(MODEL) --budget $(BUDGET)  --alpha $(ALPHA4) --beta $(BETA4) --lam $(LAM4)
 
 freeze-rope:
-	$(PY) scripts/freeze_rope_mode.py --model $(MODEL) --budget $(BUDGET) 	  --alpha $(ALPHA4) --beta $(BETA4) --lam $(LAM4) --apply
+	$(PY) scripts/freeze_rope_mode.py --model $(MODEL) --budget $(BUDGET)  --alpha $(ALPHA4) --beta $(BETA4) --lam $(LAM4) --apply
 
 # --- Phase 5: the factorial matrix -----------------------------------------
 phase5:
@@ -265,22 +265,30 @@ phase6-3b-scan:
 BUDGETS6 ?= 0.2,0.3
 COMMA := ,
 
-# Explicit, not "auto". choose_precision()'s auto mode sizes weights + the
-# uncompressed KV cache + 2.5 GB headroom and nothing else, so for qwen2.5-3b
-# at 8192 it picks bf16 - and phase6-3b-scan then OOM'd on a real T4 inside
-# SDPA, asking for 4.05 GiB with 3.91 GiB free and 10.65 GiB already in use.
-# The missing term is the attention activation itself, which auto has never
-# modelled; this is the fourth OOM in this project traceable to it.
+# bf16, and only 2048/4096. The route here matters, because both halves of
+# this are forced by hardware, not chosen for convenience.
 #
-# 4bit applies to ALL FIVE methods, not just the `full` baseline that blew up.
-# Precision changes accuracy, so running the baseline at one precision and the
-# compressed conditions at another would confound the exact comparison this
-# phase exists to make - the same reasoning that made recompress_slack=16
-# uniform across methods in Phase 5. 4-bit qwen2.5-3b is already validated:
-# Phase 1 scored 1.000 on it. This is a recorded precision change, not a
-# silent scope reduction: every record carries `precision`, and the transfer
-# claim must be stated as "the 1.5B-tuned config transfers to 4-bit 3B".
-PRECISION6 ?= 4bit
+# bf16 at 8192 does not fit: phase6-3b-scan OOM'd on a real T4 inside SDPA,
+# asking for 4.05 GiB with 3.91 GiB free and 10.65 GiB already in use.
+# choose_precision()'s auto mode had said bf16 was fine, because it sizes
+# weights + uncompressed KV + 2.5 GB headroom and never models the attention
+# activation - the fourth OOM in this project from that blind spot.
+#
+# 4-bit does fit (11.96 GiB peak, 1.000 accuracy, ~32s/task in the scan) but
+# hangs the GPU. Three runs stalled after 31, 37 and 4 tasks with no error, no
+# log and no OOM, at different methods, contexts and memory levels, and the
+# wedged process survived SIGKILL. Phases 4 and 5 ran 300 and 500 tasks on
+# this same harness in bf16 without a single stall, so bitsandbytes is the
+# variable, not the harness.
+#
+# That leaves bf16 at 2048/4096 as the configuration this hardware can
+# actually measure. It is a real scope reduction and is recorded as one: the
+# transfer claim is "the 1.5B-tuned config transfers to 3B at 2k-4k", with no
+# 8192 evidence on 3B. Recorded, not silently dropped - PHASE6_CONTEXTS in
+# check_results.py carries the same note, so the gate cannot quietly pass a
+# grid that is missing a column nobody remembers removing.
+PRECISION6 ?= bf16
+CONTEXTS6  ?= 2048,4096
 
 # `full` is uncompressed, so a budget is meaningless for it - make_cache
 # ignores the value. It gets its own invocation at --budget 1.0 because that
@@ -290,13 +298,13 @@ PRECISION6 ?= 4bit
 phase6-3b:
 	$(PY) eval/run.py --method streaming_llm,snapkv_unified,centroid_merge,sr_kv \
 	  --model $(MODEL3B) --precision $(PRECISION6) --task niah \
-	  --context_len 2048,4096,8192 --depths 0,25,50,75,100 \
+	  --context_len $(CONTEXTS6) --depths 0,25,50,75,100 \
 	  --budget $(BUDGETS6) --n_samples $(SAMPLES) \
 	  --shard $(SHARD) --num_shards $(NSHARDS) \
 	  --output $(RESULTS)/phase6_niah_$(MODEL3B).json
 	$(PY) eval/run.py --method full --model $(MODEL3B) --precision $(PRECISION6) \
 	  --task niah \
-	  --context_len 2048,4096,8192 --depths 0,25,50,75,100 \
+	  --context_len $(CONTEXTS6) --depths 0,25,50,75,100 \
 	  --budget 1.0 --n_samples $(SAMPLES) \
 	  --shard $(SHARD) --num_shards $(NSHARDS) \
 	  --output $(RESULTS)/phase6_niah_full_$(MODEL3B).json

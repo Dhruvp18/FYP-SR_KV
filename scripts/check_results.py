@@ -41,7 +41,14 @@ DEFAULT_CONTEXTS = [2048, 4096, 8192, 16384]
 DEFAULT_DEPTHS = [0, 25, 50, 75, 100]
 #: phase6-3b's own method/context list (includes "full"; Makefile's own spec)
 PHASE6_METHODS = ["full", "streaming_llm", "snapkv_unified", "centroid_merge", "sr_kv"]
-PHASE6_CONTEXTS = [2048, 4096, 8192]
+# 8192 is deliberately absent. qwen2.5-3b does not fit at 8192 in bf16 on a
+# 14.56 GiB T4 (the scan OOM'd asking for 4.05 GiB with 3.91 free), and 4-bit,
+# which does fit, hangs the GPU intermittently - three runs stalled after 31,
+# 37 and 4 tasks with no error, no log and a process that SIGKILL could not
+# reap. bf16 at 2048/4096 is the configuration this hardware can actually
+# measure, so the 3B transfer claim is scoped to 2k-4k and says so rather than
+# carrying an 8192 column that no run can fill.
+PHASE6_CONTEXTS = [2048, 4096]
 DEFAULT_LB_TASKS = ["narrativeqa", "qasper", "gov_report", "triviaqa"]
 
 #: a 1.5B instruct model must clear this on a 512-token retrieval
@@ -468,6 +475,21 @@ def gate_phase6(records, *, model, budgets, n_samples=3) -> tuple[int, list[str]
         r for r in _rows(records, model=model)
         if r.get("method") in PHASE6_METHODS and r.get("context_len") in PHASE6_CONTEXTS
     ]
+
+    # Precision is not a detail here. Phase 6 ran 4-bit first because bf16 OOM'd
+    # at 8192, then moved to bf16 once 4-bit proved to hang; 57 four-bit records
+    # already exist. 4-bit and bf16 answer the same cell with different numbers,
+    # so counting them together would report a complete grid built from two
+    # different experiments - the Phase 4 contamination bug, one axis over.
+    precisions = sorted({r.get("precision") for r in rows if "error" not in r},
+                        key=lambda p: (p is None, p))
+    if len(precisions) > 1:
+        return 1, [
+            f"refusing to mix precisions {precisions}: these are different experiments, "
+            "not extra samples of one. Keep the superseded precision out of results/ "
+            "(results/diagnostics/ is excluded from load_records) and re-run the gate."
+        ]
+
     missing = check_completeness(
         rows, model=model, budgets=budgets, methods=PHASE6_METHODS,
         contexts=PHASE6_CONTEXTS, depths=DEFAULT_DEPTHS, n_samples=n_samples, lb_tasks=[],
