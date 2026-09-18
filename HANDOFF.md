@@ -8,301 +8,353 @@ Repo: <https://github.com/Dhruvp18/FYP-SR_KV>
 
 ---
 
-## READ THIS FIRST — live handoff, 2026-09-17 evening
+## READ THIS FIRST — full handoff for a new person, 2026-09-18
 
-Chaitra is stepping away for a few hours and Dhruv is taking over the GPU
-pipeline until she's back in the morning. This section is the ground truth as
-of the handoff. If anything below conflicts with the rest of this file, trust
-this section — the rest is being kept as reference material and general
-process docs, not all of it was touched tonight.
+You are picking up an FYP project cold. This section is written to be
+complete on its own — you should not need to ask "what happened before this"
+to start working. It has been produced entirely by an AI agent (Claude Code)
+driving `scripts/kaggle_kernel.py` end to end: pushing Kaggle kernels,
+polling them, pulling results, running gates, and finding/fixing real bugs
+along the way, under the direction of Chaitra (the project owner). If you're
+also working with an agent, hand it this whole file. If you're driving by
+hand, every command below is copy-pasteable.
 
-**Everything in this section was produced by an AI agent (Claude Code)
-driving `scripts/kaggle_kernel.py` end to end** — pushing kernels, polling,
-pulling results, running gates, and fixing bugs it found along the way. If
-Dhruv is also working with an agent, it can read this whole file for context
-and continue the same pattern. If he's driving by hand, every command below
-is copy-pasteable.
+### What this project is, in one paragraph
 
-### Where things actually stand (real Tesla T4 runs, not aspirational)
+SR-KV is a training-free KV-cache compression policy for decoder-only LLMs.
+Instead of just dropping low-importance tokens from the cache (like
+StreamingLLM/SnapKV do), it clusters them into centroid summary vectors, so
+pruned context keeps a partial semantic presence. The three conditions that
+matter — hard eviction, centroid-merge, and full SR-KV (merge + recency) —
+are deliberately **one class with two boolean flags**
+(`src/caches/sr_kv.py`), not three separate implementations, so an ablation
+comparing them measures the actual mechanism, not implementation drift. Read
+`README.md` for the full pitch and `CLAUDE.md` for the binding interface
+contract before changing any cache code — both are short and load-bearing.
 
-**Phase 1 — PASS.** bf16 sanity (qwen2.5-1.5b, ctx=512): 1.000 accuracy, 10
-samples. 4-bit fallback (qwen2.5-3b): 1.000 accuracy, 3 samples. Zero errors.
-Committed: `results/phase1_sanity.json[l]`, `results/phase1_4bit.json[l]`.
+### Who's who
 
-**Phase 2 — PASS.** `full`=1.000, `snapkv`=1.000, `streaming_llm`=0.333 at
-mid-depths (ctx=4096, budget=0.3) — the expected shape: StreamingLLM's 4-token
-sink is far smaller than the needle sentence, so it only survives when the
-needle happens to land in its always-kept recent window. 75 records, zero
-errors. Committed: `results/phase2_baselines.json[l]`.
+- **Chaitra** (`chaitrasamant` on Kaggle) — the project owner, directing this
+  work.
+- **Dhruv** (`dhruvp18` on GitHub) — owns the GitHub repo
+  (`https://github.com/Dhruvp18/FYP-SR_KV`), teammate, has his own Kaggle
+  account already set up from an earlier handoff.
+- **You** — new to this, need your own Kaggle account (setup steps below).
+- Kaggle kernel names throughout follow the pattern `<user>/sr-kv-phaseN`.
+  The **committed** `kaggle/phaseN/` files in the repo are generated for
+  `dhruvp18` by convention; anyone running their own phase regenerates them
+  for their own username first (commands below) and should revert that local
+  regeneration afterward (`git checkout -- kaggle/phaseN/`) so the committed
+  files don't drift to someone else's identity.
 
-**Phase 3 — PASS.** Conservation and budget invariants hold across a real 8k
-run for `sr_kv`/`centroid_merge`/`snapkv_unified`. All three score 1.000 at
-every depth; `sr_kv` and `centroid_merge` both form exactly 309 centroids
-consistently (real-hardware proof the RoPE centroid re-rotation code — see bug
-#1 below — retains information correctly through merging, not just that the
-accounting arithmetic balances). 27 records, zero errors. Committed:
-`results/phase3_8k.json[l]`.
-
-**Phase 4 — IN PROGRESS, not complete.** This is the RoPE position-mode
-ablation: the actual novel piece of the project (`latest` / `earliest` /
-`attn_weighted` — how to assign a RoPE position to a merged centroid). Two
-rounds already ran and were **rejected on critical review**, both kept as
-documented negative evidence rather than deleted:
-
-- `budget=0.3`: **ceiling effect.** All three modes score exactly 1.000, every
-  single record (75/75). The needle never gets merged into a centroid at this
-  budget — it always survives via the "individually top-k-picked" path — so
-  the ablation had zero power to show anything.
-  Files: `results/phase4_rope_*_b030_ceiling.json[l]`.
-- `budget=0.1`: **floor effect**, and this run also caught a real bug (see #3
-  below) — the first "result" I evaluated was silently stale data from a
-  previous run. The real number, once correctly pulled: **7/25, 6/25, 7/25**
-  correct across the three modes. Fisher exact p=**1.000** on every pairwise
-  comparison — the "0.04 spread" was one flipped sample, not a result.
-  Files: `results/phase4_rope_*_b010_floor.json[l]`.
-- A cheap scan (`make phase4-scan`, budgets 0.15/0.20/0.25, n=3, one mode)
-  found **budget=0.20 is the discriminating zone**: d25=0.33, d50=0.67
-  (genuinely sub-ceiling, not a wall of 0s/1s), vs. 0.15 floors (d25=d50=0.00)
-  and 0.25 already saturates (all 1.0). Files: `results/phase4_scan_b0.*.json[l]`.
-- **Running right now**: the full 3-mode ablation at `budget=0.20`,
-  `SAMPLES4=20` (300 tasks total, vs. 75 before, for real statistical power).
-  Pushed as `chaitrasamant/sr-kv-phase4`, kernel version 4. Estimated finish:
-  roughly 2 hours from push (started ~23:40 on 2026-09-17).
-
-  **⚠️ Dhruv cannot monitor or pull this specific run.** It's a private kernel
-  under Chaitra's Kaggle account (`chaitrasamant`), and Dhruv's own Kaggle
-  credentials have no access to it. See "What Dhruv should do," step 2.
-
-**Phases 5, 6, 7 — not started.**
-
-### Five real bugs found and fixed this session (read before touching anything)
-
-**1. Per-layer position corruption — `src/caches/base.py`. The most important
-fix; touches every phase from 3 onward.**
-`transformers>=5.0`'s Qwen2/Llama attention calls
-`past_key_values.update(key_states, value_states, layer_idx)` with **no
-`cache_kwargs` at all** (confirmed by reading the installed modeling code
-directly, not assumed). That means the cache's position-counter fallback
-isn't a rare corner case — it's the *only* code path that ever runs, for
-every layer, on every real model. The old code used one shared `_pos_counter`
-int, bumped only when `layer_idx==0`; every other layer in the *same* forward
-pass then read an already-advanced counter and recorded positions offset by a
-full step's worth of tokens, drifting further every subsequent step. This
-silently corrupted the RoPE delta used to un-rotate/re-rotate merged
-centroids — the project's actual novel contribution — for every layer past 0.
-It didn't crash and didn't produce non-finite output (existing tests didn't
-catch it); it only surfaced as an explicit `positions.max() <= n_tokens_seen`
-bound in one test. **Fixed**: per-layer counter dict instead of one shared
-int. Confirmed on real Kaggle GPU hardware too (the exact same 3 tests failed
-in the pulled `pytest_cache/lastfailed` from the very first Phase 1 kernel
-run, before the fix landed). Nothing had been run on real GPU before this
-session, so no historical results needed correcting — just the code.
-
-**2. Kaggle kernel slug bug — `scripts/kaggle_kernel.py`.**
-Kaggle derives a pushed kernel's *live* slug from `kernel-metadata.json`'s
-`title` field, not from `id`. The old title
-(`"SR-KV Phase 1 - harness sanity"`) slugified to
-`sr-kv-phase-1-harness-sanity`, silently diverging from the `sr-kv-phase1`
-slug every `status`/`pull` call assumed — so those calls 404'd against a
-kernel that actually existed at a different URL. **Fixed**: title is now
-literally the slug (`sr-kv-phase1`, etc).
-
-**3. No `--force` on pull — `scripts/kaggle_kernel.py`.**
-The Kaggle CLI's `kernels output` **skips any file whose local copy looks
-newer**. Re-running a phase and pulling into the same `.kaggle_output/phaseN/`
-directory silently re-serves the *previous* run's results. This is exactly
-what happened on the first `budget=0.1` attempt — the pulled file's own
-`metadata.argv` still read `--budget 0.3`. I only caught it because the
-numbers looked too similar to the previous run and I checked the metadata.
-**Fixed**: pulls now always pass `--force`. Still, as belt-and-suspenders:
-**always `rm -rf .kaggle_output/phaseN` before re-pulling the same phase.**
-
-**4. Gate/freeze had no statistical rigor — `scripts/check_results.py`,
-`scripts/freeze_rope_mode.py`.**
-Two compounding problems: (a) both scripts silently averaged across different
-budgets if multiple sweeps' result files existed under the same base
-filenames — which is exactly what would have happened if the `budget=0.1`
-files hadn't been renamed before the `budget=0.2` run — and this is not
-hypothetical, it's what actually happened: with the old `budget=0.3` ceiling
-files still present, the gate reported `attn_weighted` as the winner; with
-only the `budget=0.1` files, it reported `latest`. Same code, two different
-"winners," decided purely by which files happened to be on disk. (b) Neither
-had any concept of statistical power: the real spread (0.04, one flipped
-record out of 25) was smaller than the tool's own "note: within 2 points"
-threshold could ever catch, since 0.02 is finer than the 1/25 measurement
-resolution. **Fixed**: both now (a) refuse to aggregate across budgets — name
-one explicitly with `--budget`, and (b) run a Fisher exact test on
-best-vs-worst mode and refuse to declare a winner (exit 2 / "REFUSING to
-freeze") at p ≥ 0.05.
-**When Phase 4's real run lands: read the p-value line, not just the printed
-mean.** `configs/defaults.yaml` is still the unfrozen placeholder
-(`rope_position_mode: attn_weighted`, `rope_position_mode_frozen: false`) —
-correctly, given the evidence so far.
-
-**5. Llama-3.2-3B → Qwen2.5-3B pivot — `src/models.py`, `Makefile`,
-`scripts/gen_configs.py`, `scripts/kaggle_kernel.py`.**
-`meta-llama/Llama-3.2-3B-Instruct` is gated on Hugging Face and blocked Phase
-1 outright (confirmed via the actual kernel log: 401 `GatedRepoError`, nobody
-had accepted the license or supplied a token). `microsoft/Phi-3.5-mini-instruct`
-was considered as an ungated cross-architecture replacement and **ruled out
-after checking its actual HF config**: `rope_scaling.type == "longrope"`,
-exactly the length-dependent scheme `rope_positions.py` rejects (see
-`CLAUDE.md` A5) — `RopeHelper.from_model()` would raise `NotImplementedError`
-the instant `sr_kv`/`centroid_merge` tried to use it. Checked
-`Qwen2.5-3B-Instruct` instead before committing: `rope_scaling: None`,
-`max_position_embeddings: 32768` — safe. `MODEL3B` now defaults to
-`qwen2.5-3b` everywhere (Makefile, `kaggle_kernel.py --model3b`,
-`gen_configs.py`). **Trade-off for the writeup: Phase 6 now shows the tuned
-config transferring across scale within the Qwen family, not across
-architectures.** `llama3.2-3b` remains a supported `--model`/`--model3b`
-value for whenever HF access lands (an HF-auth cell reading a Kaggle
-`HF_TOKEN` secret was also added to every generated notebook, so it'll work
-the moment the license is accepted).
-
-### The strategic question this session surfaced — important for the writeup
-
-Phase 3 showed `snapkv_unified` (pure hard eviction, **no** merging)
-*also* scoring 1.000, tied with `sr_kv`/`centroid_merge`, at budget=0.3.
-That's not a bug — it's a structural property worth stating plainly:
-**single-needle NIAH exact-match retrieval cannot show centroid merging
-beating hard eviction, at any budget.** A centroid is a weighted average of
-~20 token vectors; it cannot reproduce an exact 6-digit number by
-construction. On this task, merging can at best *tie* hard eviction (when the
-needle survives via attention scoring regardless of method) and can never
-beat it. No amount of budget-tuning fixes this — it's about what the metric
-can reward, not about calibration.
-
-Discussed with Chaitra; the plan going in:
-
-- Finish calibrating the NIAH RoPE ablation (in progress — see Phase 4 above).
-  NIAH stays useful for "does compression break exact retrieval at all," just
-  not for proving merging beats dropping.
-- Treat `phase5-longbench` (already built — `eval/longbench.py`), especially
-  `gov_report` (ROUGE-L, summarization), as the **primary evidence for the
-  actual thesis**. Gist-preservation is exactly what a centroid encodes and
-  exactly what hard eviction discards, and graded metrics (F1/ROUGE) carry
-  far more statistical power per sample than NIAH's binary exact-match.
-- Before running Phase 5's NIAH half at the Makefile's default `BUDGET=0.3`,
-  expect it may *also* saturate for the same structural reason. Either sweep
-  to a discriminating budget there too, or accept a probable ceiling tie on
-  NIAH and lean on LongBench for the headline number — either is fine, but
-  don't be surprised by a tie and don't quietly bury it (gate 5 is built to
-  surface a genuine SR-KV loss as exit code 2, not a hidden pass — do the
-  same in spirit for a NIAH ceiling tie: report it, don't hide it).
-
-### What Dhruv should do, concretely
-
-**1. Set up his own Kaggle credentials — his account is separate from
-Chaitra's.**
+### Set up your own Kaggle account — do this first
 
 ```bash
-# Kaggle -> Settings -> API -> Create New Token (the newer KGAT_... bearer-token style)
+# Kaggle -> Settings -> API -> Create New Token (current format is a bearer
+# token like KGAT_..., not the old kaggle.json - both work with the current
+# CLI, this is just what you'll be issued)
 mkdir -p ~/.kaggle
 printf '%s' "<YOUR_TOKEN_HERE>" > ~/.kaggle/access_token
 chmod 600 ~/.kaggle/access_token
 
 pip install kaggle
-kaggle --version     # if "kaggle: command not found", the install went to a
-                      # user Scripts dir not on PATH - find it and prepend it,
-                      # e.g. on Windows:
-                      # export PATH="$HOME/AppData/Roaming/Python/Python312/Scripts:$PATH"
-                      # or just invoke as `python -m kaggle` everywhere below
+kaggle --version
+# if "command not found": the install went to a user Scripts dir not on
+# PATH. Find it and prepend it for your shell session, e.g. on Windows:
+#   export PATH="$HOME/AppData/Roaming/Python/Python312/Scripts:$PATH"
+# or invoke everywhere below as `python -m kaggle` instead of `kaggle`.
 
-kaggle kernels list -m   # confirms auth; lists his own kernels
+kaggle kernels list -m   # confirms auth; lists your own kernels (empty at first)
 ```
 
-Also confirm his account is **phone-verified**
-(Settings → Phone Verification) — required for GPU + internet-enabled
-kernels, without which pushed kernels fail outright.
+Also: **phone-verify your Kaggle account** (Settings → Phone Verification).
+Without this, GPU + internet-enabled kernels fail outright. Your Kaggle
+username goes in every `--user` flag below.
 
-His Kaggle username goes in every `--user` flag below.
+**Hard limit worth knowing up front**: this account tier caps you at **2
+concurrent GPU kernel sessions**. Pushing a 3rd while 2 are already running
+gets rejected with `Kernel push error: Maximum batch GPU session count of 2
+reached.` — not a bug, just capacity. If you and Chaitra/Dhruv both want work
+running simultaneously, you need it spread across *your own* accounts, or
+you wait for a slot to free up.
 
-**2. Check whether Chaitra's Phase 4 run has landed.**
-He can't query her private kernel directly, but the only thing that matters
-is whether the *results* have been pushed to GitHub:
+### Where things actually stand (real Tesla T4 runs, not aspirational)
+
+**Phase 1 — PASS.** bf16 sanity (qwen2.5-1.5b, ctx=512): 1.000 accuracy, 10
+samples. 4-bit fallback (qwen2.5-3b): 1.000 accuracy, 3 samples. Zero errors.
+
+**Phase 2 — PASS.** `full`=1.000, `snapkv`=1.000, `streaming_llm`=0.333 at
+mid-depths (ctx=4096, budget=0.3) — the expected shape: StreamingLLM's
+4-token sink is far smaller than the needle sentence, so it only survives
+when the needle lands in its always-kept recent window. 75 records, zero
+errors.
+
+**Phase 3 — PASS.** Conservation and budget invariants hold across a real 8k
+run for `sr_kv`/`centroid_merge`/`snapkv_unified`. All three score 1.000 at
+every depth; `sr_kv`/`centroid_merge` both form exactly 309 centroids
+consistently. 27 records, zero errors.
+
+**Phase 4 — DONE, with a real conclusion.** The RoPE centroid position-mode
+ablation (`latest`/`earliest`/`attn_weighted`) ran properly-powered sweeps at
+two budgets and found **no significant difference between the three
+conventions** — at the discriminating budget (0.2, found via a separate
+scan), n=100/mode: latest=76/100, earliest=76/100, attn_weighted=77/100,
+Fisher exact p=1.000. `configs/defaults.yaml` has
+`rope_position_mode: attn_weighted` with `rope_position_mode_frozen: true`
+— frozen as a **principled default** (it weights cluster members by
+attention score, consistent with SR-KV's scoring design elsewhere), explicitly
+**not** an empirical winner. The evidence field says this directly. Do not
+re-open this without a real reason; two properly-powered experiments already
+answered it.
+
+**Phase 5 — NIAH half not started. LongBench half: RUNNING RIGHT NOW under
+`chaitrasamant`, expect ~4 hours from launch.** See "Live kernels" below.
+Long, bug-riddled story below in "What actually happened," but the short
+version: LongBench needed five separate real-bug fixes to run cleanly, and
+even the first clean 500/500 run turned up a genuine correctness bug
+(repetition collapse in `sr_kv`/`centroid_merge` on long generations) that's
+now fixed and being re-verified in the currently-running kernel.
+
+**Phase 6 — RUNNING RIGHT NOW under `chaitrasamant`** (the alpha/beta sweep,
+at `budget=0.2` not the Makefile's default 0.3 — see why below). `phase6-3b`
+(transfer to qwen2.5-3b) has **not** been run yet and has a known,
+unaddressed OOM risk — see "What's actually left to do."
+
+**Phase 7 — not started.** Don't run it until Phase 5/6 have real, complete
+data; it'll just render figures from whatever's in `results/`, gaps and all.
+
+### Live kernels — check these before doing anything else
 
 ```bash
-git pull origin main   # always do this first, every session
+kaggle kernels status chaitrasamant/sr-kv-phase5   # LongBench, recompress_slack=16 fix
+kaggle kernels status chaitrasamant/sr-kv-phase6   # alpha/beta sweep at budget=0.2
 ```
 
-- If `results/phase4_rope_latest.json` (and `earliest`, `attn_weighted`)
-  exist **and their content's `budget` field is `0.2`** (check with
-  `python -c "import json; print(json.load(open('results/phase4_rope_latest.json'))['records'][0]['budget'])"`,
-  should print `0.2`) → the run finished and (if Chaitra's agent session was
-  still active) probably already got committed with a gate result. Read the
-  commit log (`git log --oneline -10`) to see what happened. If for some
-  reason it's not yet gated:
-  ```bash
-  python scripts/check_results.py gate --phase 4 --model qwen2.5-1.5b --budget 0.2
-  ```
-  Read the **p-value line**, not just the printed means. If it exits 0
-  (real, significant winner):
-  ```bash
-  python scripts/freeze_rope_mode.py --model qwen2.5-1.5b --budget 0.2 --apply
-  git add configs/defaults.yaml && git commit -m "Freeze RoPE mode: <winner> (p=<value>, budget=0.2)"
-  git push origin main
-  ```
-  Then move to Phase 5. If it exits 2 (still no significant difference even at
-  n=20/mode) — that's a real, reportable finding on its own. Pick
-  `attn_weighted` as a principled (but undefended) default, document it in the
-  writeup as "not empirically distinguished," and move to Phase 5 without
-  freezing.
-- If those files don't exist yet, or exist with `budget: 0.1` or `0.3` — the
-  new run hasn't landed. **Don't block on it.** Do step 3 instead.
+Both were pushed by Chaitra's agent session and were still `RUNNING` as of
+this handoff. **You cannot pull their results with your own Kaggle
+credentials** — they're private kernels under `chaitrasamant`'s account.
+Do `git pull origin main` first, always — if Chaitra's session is still
+active when you start, it'll have pushed the results the moment each kernel
+completes and been gated, and you'll see it in the commit log rather than
+needing to guess.
 
-**3. Parallel-safe work that doesn't depend on Phase 4's outcome.**
-`streaming_llm` and `snapkv_unified` don't use `rope_position_mode` at all (no
-clustering), so their numbers can't be invalidated by whatever Phase 4
-decides. Get real progress on Phase 5's LongBench half now:
+If both have finished and results are already committed, and you want to
+verify or continue from there:
 
 ```bash
-python -m pytest -q   # always, before pushing any kernel
-
-python scripts/kaggle_kernel.py generate --phase 5 --user <dhruv-username> \
-  --target phase5-longbench --skip-gate
-python scripts/kaggle_kernel.py push --phase 5
-python scripts/kaggle_kernel.py status --phase 5 --user <dhruv-username>
-# ... wait, poll every few minutes ...
-rm -rf .kaggle_output/phase5   # belt-and-suspenders, see bug #3
-python scripts/kaggle_kernel.py pull --phase 5 --user <dhruv-username>
+git pull origin main
+git log --oneline -15   # see exactly what landed
+python -m pytest -q     # always, before touching anything
 ```
 
-`--skip-gate` is there because the real `gate5` needs all four conditions
-including `sr_kv`/`centroid_merge`, and those two are worth re-running once
-Phase 4 freezes a mode (though the effect measured so far, even before it was
-ruled non-significant, was only ~0.04-0.07 — likely low-cost to redo just
-those rows later if needed). Running `sr_kv`/`centroid_merge` now too, with
-the current placeholder `attn_weighted`, is a reasonable bet if there's spare
-time — just flag in the writeup which rows might get superseded.
+### What actually happened this session (why the code looks the way it does)
 
-**4. If there's time left after that**, the big one is the full NIAH factorial
-(`make phase5` via `kaggle_kernel.py generate --phase 5 --user ...` without
-`--target`/`--skip-gate`). Given the ceiling-effect risk discussed above,
-consider a quick per-budget probe (same idea as `phase4-scan`, adapted) before
-committing the full grid to `BUDGET=0.3` — or just run it and treat a ceiling
-tie as a real, reportable finding rather than a failure to hide.
+Fourteen distinct real bugs were found and fixed, in roughly this order.
+Skim this before touching `src/`, `eval/`, or `scripts/kaggle_kernel.py` —
+several of these look like they'd be easy to "fix" a different, more obvious
+way, and that obvious way was already tried and shown to be wrong.
 
-**5. Non-negotiables, every phase:**
-- `python -m pytest -q` before every kernel push (2 CPU minutes; catches a
-  broken commit before it burns GPU quota).
-- `rm -rf .kaggle_output/phaseN` before re-pulling the same phase.
-- Never edit `src/` to make a gate pass. Never loosen a gate threshold. A bad
-  result is the deliverable, not a bug to hide — this project's gates
-  (`scripts/check_results.py`) are explicitly designed to surface negative
-  findings (exit code 2) rather than let them slide through as a quiet pass.
-- Commit and push after every phase, with a commit message that states the
-  actual numbers and what they mean (see the commit log for the pattern used
-  tonight) — so Chaitra can read `git log` in the morning and know exactly
-  what happened without re-deriving it from raw JSON.
-- When generating a kernel for a phase that's specifically *his* to run
-  (rather than resuming one of Chaitra's), pass `--user <dhruv-username>` —
-  `kaggle_kernel.py` bakes the username into the kernel id and into which
-  earlier-phase kernels it mounts for resume (`kernel_sources`). Don't mix
-  the two accounts' phase numbers; if he starts fresh, his Phase 5 should
-  chain from *his own* Phase 1-4 (or just skip the `kernel_sources`/resume
-  chaining entirely for a from-scratch Phase 5 run, since Phase 5 doesn't
-  actually need Phase 1-4's *outputs* mounted, only their code fixes, which
-  come from `git pull`, not from kernel mounting).
+1. **Per-layer position corruption (`src/caches/base.py`)** — the most
+   consequential fix. `transformers>=5.0`'s Qwen2/Llama attention calls
+   `Cache.update()` with **no `cache_kwargs` at all** (confirmed by reading
+   the installed modeling code). The cache's own position-counter fallback
+   is therefore not a rare corner case — it's the *only* path that ever
+   runs, for every layer, on every model. A single shared `_pos_counter`
+   int, bumped only at `layer_idx==0`, let every other layer in the same
+   forward pass read an already-advanced counter, corrupting the RoPE delta
+   used to reposition merged centroids for every layer past 0. Fixed: a
+   per-layer counter dict. This never affected any GPU results, since
+   nothing had run on GPU before this was found and fixed.
+
+2. **Kaggle kernel slug bug (`scripts/kaggle_kernel.py`)** — Kaggle derives
+   a pushed kernel's *live* slug from `kernel-metadata.json`'s `title`, not
+   `id`. A descriptive title silently diverged from the slug every
+   `status`/`pull` call assumed. Fixed: title is now literally the slug.
+
+3. **Llama-3.2-3B → Qwen2.5-3B pivot** — Llama-3.2-3B is gated on HF and
+   blocked Phase 1 outright. `microsoft/Phi-3.5-mini-instruct` was
+   considered and **ruled out after checking its actual HF config**:
+   `rope_scaling.type == "longrope"`, exactly the length-dependent scheme
+   `rope_positions.py` rejects. Qwen2.5-3B-Instruct verified safe
+   (`rope_scaling: None`, 32768 native context) before adopting it as the
+   default `MODEL3B` everywhere. Trade-off for the writeup: Phase 6 now
+   tests generalization across scale within Qwen, not across architectures.
+   `llama3.2-3b` remains a supported value for whenever HF access lands.
+
+4. **No `--force` on Kaggle pulls** — the Kaggle CLI skips any file whose
+   local copy "looks newer," so re-pulling the same phase silently re-serves
+   the *previous* run's results. Caught because a pulled file's own
+   `metadata.argv` still said the old budget. Fixed: pulls always `--force`
+   now. Still, **always `rm -rf .kaggle_output/phaseN` before re-pulling the
+   same phase** — belt and suspenders.
+
+5. **Gate/freeze had no statistical rigor
+   (`scripts/check_results.py`, `scripts/freeze_rope_mode.py`)** — both
+   would silently average across different budgets if two sweeps' result
+   files existed under overlapping content (this literally happened: the
+   gate reported a different "winner" depending on which files were on
+   disk), and neither had any concept of "is this difference bigger than
+   noise." Both now refuse to aggregate across budgets and run a Fisher
+   exact test, refusing to name a winner at p ≥ 0.05. **Read the p-value
+   line from any Phase 4-style comparison, not just the printed mean.**
+
+6. **Phase 4-scan / real-sweep task_id collision** — a 3-sample diagnostic
+   scan and the real 100-sample sweep measured the identical
+   (method, budget, mode, depth, sample_idx) cell, and `load_records`'
+   directory-wide dedup let the scan's value silently overwrite the sweep's
+   on one cell, based on alphabetical file order. Fixed: diagnostic runs now
+   write to `results/diagnostics/` (`load_records` globs non-recursively,
+   so this is the whole fix), and `merge_outputs()` (see bug #10) had to be
+   fixed too, since it was flattening that structure right back.
+
+7. **LongBench loading: `datasets` library removed loading-script support**
+   — `THUDM/LongBench` ships a `LongBench.py` loading script; current
+   `datasets` versions hard-refuse those
+   (`RuntimeError: Dataset scripts are no longer supported`). Not a
+   permissions issue — a removed feature. Fixed by reading that script
+   directly (it just downloads `data.zip` and reads `data/<task>.jsonl`)
+   and replicating it via `huggingface_hub` + `zipfile` + `json`, bypassing
+   `datasets.load_dataset` entirely (`eval/longbench.py`).
+
+8. **LongBench OOM #1: no context truncation** — LongBench's native
+   documents run far past this project's 8k-16k scope untruncated
+   (`full` tried to allocate **43.89 GiB** on a 14.56 GiB T4 on one real
+   narrativeqa document). Fixed: token-based truncation (matching how NIAH
+   already does it precisely) via a new `--longbench_max_context_tokens`
+   flag, keeping both ends of the document (LongBench's own convention for
+   handling overlength context).
+
+9. **LongBench OOM #2: allocator fragmentation** — `expandable_segments`
+   (PyTorch's documented fix, named in the OOM message itself) got further
+   (280 tasks vs 81) but didn't fully solve it, meaning it wasn't pure
+   fragmentation. Set anyway (in the generated Kaggle notebook, before any
+   subprocess runs) as a real, if partial, improvement.
+
+10. **`merge_outputs()` flattening bug (`scripts/kaggle_kernel.py`)** —
+    pulled `results/**/*.json` files were copied to just their basename,
+    which silently undid fix #6 (diagnostic output moved to
+    `results/diagnostics/`) on the very next pull. Confirmed happening
+    twice. Fixed: now preserves the path relative to the results/figures
+    directory component.
+
+11. **LongBench OOM #3, root cause: no memory margin, not a leak** —
+    correlating real `max_memory_allocated` against actual token counts
+    showed **every** document truncated to the full 8192-token cap used
+    11.9-13.5 GiB on a 14.56 GiB T4 — effectively zero margin, so whichever
+    document happened to be near-cap first in the queue triggered the OOM.
+    Fixes #9's fragmentation theory and #4/#10's earlier "progress" were
+    coincidences of task ordering, not real fixes for this. Actual fix:
+    lowered `--longbench_max_context_tokens` default 8192 → 4096 (real
+    headroom, ~1.5 GiB/1000 tokens measured scaling). Also threaded the
+    parameter into `run_key` so a future cap change can't silently blend
+    with old data the way bug #6 did.
+
+12. **Per-method process isolation for `phase5-longbench`** — applied
+    between finding #9 and #11 as a robustness measure (one `eval/run.py`
+    process per method, not one process for all five, so a fresh CUDA
+    context can't inherit whatever the previous method's process was
+    holding). Kept even after #11 explained the real cause, since it's a
+    reasonable belt-and-suspenders and matches the per-item-loop pattern
+    `phase4`/`phase6-sweep` already use.
+
+13. **Repetition collapse in `sr_kv`/`centroid_merge` on long generations**
+    — the first clean 500/500 LongBench run (after fixes #7-#12) completed
+    with zero task errors, but reading the *actual generated text* (not just
+    accuracy) showed `sr_kv`/`centroid_merge` degenerating into repetition
+    loops ("annually annually annually...", "if if if if...") on long
+    outputs. Quantified: 0/25 degenerate at 32-token generations, up to
+    10/25 (40%) at 512 tokens — monotonic in generation length, zero for
+    every non-clustering method at every length. Root cause: `_compress()`
+    fully re-clusters every candidate from scratch (fresh k-means init, not
+    continuing the previous step's assignment) every time it triggers, and
+    `recompress_slack=0` (the only value ever used, and the only path
+    available before this session — see #14) means a tight budget during
+    long decode triggers this on nearly every single new token. A 512-token
+    generation meant ~500 independent full re-clusterings of the same ~155
+    centroids, giving the model a KV history whose semantic identity
+    reshuffles every step — not what it was trained against.
+
+14. **`recompress_slack` never exposed on the CLI** — it existed in
+    `src/caches/base.py` as a constructor parameter since Phase 0-3, but
+    `eval/run.py` never let you set it, so it was always 0 in practice.
+    Exposed as `--recompress_slack`, threaded into `run_key`. A targeted
+    probe (gov_report only, `centroid_merge`+`sr_kv` only, n=10) confirmed
+    `slack=16` and `slack=32` both fully fix bug #13 (0/10 degenerate at
+    either value, repetition scores back to the clean ~0.07 baseline).
+    Adopted `RECOMPRESS_SLACK=16` as the `phase5-longbench` Makefile
+    default, applied **uniformly to all five methods** (not just the two
+    that showed the bug) — it also changes eviction timing for
+    `streaming_llm`/`snapkv_unified`, and this project's whole ablation
+    design rests on changing exactly one thing between conditions.
+    **Not** applied to Phase 1-4's NIAH work: NIAH's short generations
+    (16-32 tokens) never showed the bug at slack=0, and those results are
+    already gated.
+
+Also worth knowing: **while Chaitra's session was between windows, a
+different tool (GitHub Copilot) independently pushed a `phase5` (full NIAH)
+kernel to the same Kaggle account and it failed partway through** (OOM on
+the first `context_len=16384` task for `full` — consistent with a risk
+already flagged in this doc). That partial, incomplete data was found,
+inspected, and discarded — not committed, not used. If you see stray Kaggle
+kernel versions or output you don't recognize, check the actual content
+before trusting it; this project has now hit real contamination/staleness
+bugs (#4, #6, #10) plus this one external-tool surprise, so "check the raw
+data, not just whether something ran" is a load-bearing habit here, not
+paranoia.
+
+### What's actually left to do
+
+1. **Let Phase 5 (LongBench, `chaitrasamant`) and Phase 6 (sweep,
+   `chaitrasamant`) finish.** Check status with the commands above. Once
+   Phase 5 lands: verify it the way bug #13 was found — don't just check the
+   gate/accuracy, spot-check actual generated text for `sr_kv`/
+   `centroid_merge` on `gov_report` to confirm no repetition collapse
+   remains. Once Phase 6 lands: `python scripts/check_results.py gate
+   --phase 6 --model qwen2.5-3b --budget 0.2` (note: budget 0.2 to match
+   what was actually run, not the Makefile default 0.3).
+
+2. **Before running `phase6-3b`** (transfer to qwen2.5-3b, not yet run): run
+   `make phase6-3b-scan` first (2 cheap samples, `full` only, ctx=8192). This
+   project has now hit real, hardware-driven OOMs three separate times on
+   `full`/long-context combinations (bugs #8, #9, #11) — qwen2.5-3b is a
+   bigger model at the same 8192-token ceiling that 1.5b was already
+   borderline at, and `choose_precision()`'s "auto" mode only estimates
+   KV-cache size, not the activation/logits memory that actually caused the
+   earlier OOMs. Don't skip this check to save five minutes and risk losing
+   hours the way LongBench did.
+
+3. **Phase 5's NIAH half hasn't been run yet at all.** Given what Phase 3/4
+   already showed (budget=0.3 saturates to a ceiling at 8k — every method
+   ties at 1.000, which proves nothing), seriously consider whether the
+   default `BUDGET=0.3` is the right choice for the NIAH factorial before
+   committing GPU-hours to it, the same way a cheap scan found `budget=0.2`
+   for Phase 4. The strategic read from earlier in this project: NIAH
+   exact-match retrieval structurally can't show centroid-merging beating
+   hard-eviction (a centroid is an average, it can't reproduce an exact
+   token) — LongBench (especially `gov_report`, summarization) is where the
+   actual thesis (does merging preserve more than dropping) can be tested.
+   Treat NIAH as "does compression break exact retrieval," not as the
+   headline result.
+
+4. **Phase 7 (figures)** only after 5 and 6 have real, complete data.
+   `make phase7` / `python scripts/kaggle_kernel.py run --phase 7 --user
+   <you>` (no GPU needed — `enable_gpu` is deliberately `false` for phase 7).
+
+5. **Always, every phase**: `python -m pytest -q` before pushing any kernel.
+   `rm -rf .kaggle_output/phaseN` before re-pulling the same phase. Never
+   edit `src/` to make a gate pass. Never loosen a gate threshold — this
+   project's gates are explicitly designed to surface negative/inconclusive
+   findings (exit code 2) rather than hide them, and that's a feature, not a
+   bug to route around. Check the actual JSON records and (for anything
+   generation-based) the actual generated text before trusting a "PASS" —
+   this session's bug list above is the concrete argument for why that habit
+   matters, not abstract caution.
+
+6. **Commit and push after every phase**, with a commit message that states
+   the actual numbers and what they mean — see `git log` for the pattern
+   used throughout this session. Whoever reads the log next (Chaitra, Dhruv,
+   or the next person after you) should be able to reconstruct what happened
+   without re-deriving it from raw JSON.
 
 ---
 
