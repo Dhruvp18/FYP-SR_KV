@@ -30,6 +30,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
+from scripts.check_results import _resolve_phase4_arms  # noqa: E402
 from src.rope_positions import POSITION_MODES  # noqa: E402
 from scripts.check_results import (  # noqa: E402
     SIGNIFICANCE_ALPHA,
@@ -43,7 +44,12 @@ DEFAULTS_PATH = REPO_ROOT / "configs" / "defaults.yaml"
 CHANCE_CEILING = 0.05
 
 
-def mode_scores(records, *, model=None, budget=None) -> dict[str, list[float]]:
+def scoring_knobs(r) -> tuple:
+    """The knobs Phase 4 held fixed while it varied only the rope mode."""
+    return (r.get("alpha"), r.get("beta"), r.get("lam"))
+
+
+def mode_scores(records, *, model=None, budget=None, scoring=None) -> dict[str, list[float]]:
     scores: dict[str, list[float]] = defaultdict(list)
     for r in records:
         if r.get("method") not in ("sr_kv", "centroid_merge"):
@@ -52,10 +58,31 @@ def mode_scores(records, *, model=None, budget=None) -> dict[str, list[float]]:
             continue
         if budget is not None and r.get("budget") != budget:
             continue
+        if scoring is not None and scoring_knobs(r) != tuple(scoring):
+            continue
         mode = r.get("rope_position_mode")
         if mode in POSITION_MODES:
             scores[mode].append(r["accuracy"])
     return scores
+
+
+def scorings_present(records, *, model=None, budget=None) -> list[tuple]:
+    """Distinct (alpha, beta, lam) among the RoPE-sweep records.
+
+    Phase 6's alpha/beta sweep writes `method=sr_kv` records at the same
+    model, budget and default rope mode Phase 4 used. Without this, those
+    270 records land in the attn_weighted arm alone and silently decide the
+    freeze - the budget-blending bug this script already guards against,
+    one axis over.
+    """
+    found = {
+        scoring_knobs(r) for r in records
+        if r.get("method") in ("sr_kv", "centroid_merge")
+        and r.get("rope_position_mode") in POSITION_MODES
+        and (not model or r.get("model") == model)
+        and (budget is None or r.get("budget") == budget)
+    }
+    return sorted(found, key=lambda t: tuple((v is None, v) for v in t))
 
 
 def budgets_present(records, *, model=None) -> list:
@@ -90,6 +117,9 @@ def main(argv=None) -> int:
     parser.add_argument("--model", default=None)
     parser.add_argument("--budget", type=float, default=None,
                         help="which sweep to read when results/ holds more than one budget")
+    parser.add_argument("--alpha", type=float, default=None)
+    parser.add_argument("--beta", type=float, default=None)
+    parser.add_argument("--lam", type=float, default=None)
     parser.add_argument("--apply", action="store_true", help="write the winner into defaults.yaml")
     args = parser.parse_args(argv)
 
@@ -107,7 +137,47 @@ def main(argv=None) -> int:
             return 2
         budget = found[0] if found else None
 
-    scores = mode_scores(records, model=args.model, budget=budget)
+    scoring = ((args.alpha, args.beta, args.lam)
+               if None not in (args.alpha, args.beta, args.lam) else None)
+    if scoring is None:
+        found = scorings_present(records, model=args.model, budget=budget)
+        if len(found) > 1:
+            shown = ", ".join(f"(alpha={a}, beta={b}, lam={l})" for a, b, l in found)
+            a, b, l = found[0]
+            print("")
+            print("REFUSING to freeze: results/ holds rope-mode records at several")
+            print(f"scoring settings [{shown}]. Phase 4 varied only rope_position_mode;")
+            print("a hyperparameter sweep (Phase 6) writing into the same directory is a")
+            print("different experiment, not extra samples. Re-run with")
+            print(f"--alpha {a} --beta {b} --lam {l} to pick one.")
+            return 2
+        scoring = found[0] if found else None
+
+    scores = mode_scores(records, model=args.model, budget=budget, scoring=scoring)
+
+    # Pinning alpha/beta/lam is necessary but not sufficient: Phase 6's sweep
+    # has a cell at exactly Phase 4's defaults. Reuse gate 4's own resolver so
+    # the freeze and the gate can never disagree about which records are
+    # Phase 4's - two scripts drifting apart on that question is bug #5.
+    rows = [r for r in records
+            if r.get("method") in ("sr_kv", "centroid_merge")
+            and r.get("rope_position_mode") in POSITION_MODES
+            and (not args.model or r.get("model") == args.model)
+            and (budget is None or r.get("budget") == budget)
+            and (scoring is None or scoring_knobs(r) == tuple(scoring))]
+    rows, resolution = _resolve_phase4_arms(rows)
+    if resolution and resolution[0] == "refuse":
+        print("")
+        print("REFUSING to freeze:")
+        for line in resolution[1]:
+            print(f"  {line}")
+        return 2
+    if resolution and resolution[0] == "note":
+        for line in resolution[1]:
+            print(line)
+    scores = defaultdict(list)
+    for r in rows:
+        scores[r["rope_position_mode"]].append(r["accuracy"])
     missing = [m for m in POSITION_MODES if not scores.get(m)]
     if missing:
         print(f"missing results for mode(s): {missing}")

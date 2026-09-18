@@ -517,3 +517,84 @@ def test_gate7_rejects_empty_canvases(tmp_path):
     (tmp_path / "pareto_m.png").write_bytes(b"x" * 100)
     code, lines = gate_phase7(tmp_path)
     assert code == 1 and any("empty plot" in line for line in lines)
+
+
+def _phase4_arms(*, accuracy_by_mode, budget=0.2, n=10, alpha=1.0, beta=0.3, lam=0.001):
+    """One Phase 4 sweep: three arms, one run_key each, one shared task grid."""
+    records = []
+    for mode, accuracy in accuracy_by_mode.items():
+        for i in range(n):
+            records.append(_niah(
+                "sr_kv", accuracy, depth=i, budget=budget, rope_position_mode=mode,
+                run_key=f"p4-{mode}", alpha=alpha, beta=beta, lam=lam,
+            ))
+    return records
+
+
+def test_gate4_does_not_count_a_hyperparameter_sweep_as_extra_rope_samples():
+    """Phase 6's alpha/beta sweep shares Phase 4's model, budget and rope mode.
+
+    Its records are `method=sr_kv` at the default `rope_position_mode`, so a
+    filter on (method, model, budget, mode) folds them into the attn_weighted
+    arm alone. That turned a balanced 100-vs-100 comparison into 100-vs-370
+    and moved attn_weighted from 0.770 to 0.700 - silently, on real data, in
+    a gate whose whole job is to say whether the arms differ.
+    """
+    records = _phase4_arms(accuracy_by_mode={
+        "latest": 1.0, "earliest": 1.0, "attn_weighted": 1.0,
+    })
+    # Phase 6's sweep: same knobs as Phase 4's defaults for one cell, its own
+    # run_key, its own task grid, and much worse accuracy.
+    for i in range(30):
+        records.append(_niah(
+            "sr_kv", 0.0, depth=100 + i, budget=0.2, rope_position_mode="attn_weighted",
+            run_key="p6-a1.0-b0.3", alpha=1.0, beta=0.3, lam=0.001,
+        ))
+
+    code, lines = gate_phase4(records, model="m", budgets=[0.2])
+    joined = "\n".join(lines)
+    assert "attn_weighted=1.000" in joined, joined
+    assert "excluded" in joined and "p6-a1.0-b0.3" in joined, joined
+    assert code != 1
+
+
+def test_gate4_refuses_to_average_across_scoring_settings():
+    """alpha/beta are swept in Phase 6; Phase 4 held them fixed."""
+    records = _phase4_arms(accuracy_by_mode={
+        "latest": 1.0, "earliest": 1.0, "attn_weighted": 1.0,
+    })
+    records += [
+        _niah("sr_kv", 0.0, depth=100 + i, budget=0.2, rope_position_mode="attn_weighted",
+              run_key="p6-a2.0-b0.6", alpha=2.0, beta=0.6, lam=0.001)
+        for i in range(30)
+    ]
+    code, lines = gate_phase4(records, model="m", budgets=[0.2])
+    assert code == 1
+    assert any("refusing to aggregate across scoring settings" in line for line in lines)
+
+    # naming the Phase 4 setting resolves it
+    code_one, _ = gate_phase4(records, model="m", budgets=[0.2], scoring=(1.0, 0.3, 0.001))
+    assert code_one != 1
+
+
+def test_gate4_refuses_when_no_arm_identifies_the_phase4_grid():
+    """Every mode ambiguous means there is nothing to anchor the choice to."""
+    records = []
+    for mode in ("latest", "earliest", "attn_weighted"):
+        for run in ("a", "b"):
+            for i in range(5):
+                records.append(_niah(
+                    "sr_kv", 1.0, depth=i if run == "a" else 100 + i, budget=0.2,
+                    rope_position_mode=mode, run_key=f"{run}-{mode}",
+                    alpha=1.0, beta=0.3, lam=0.001,
+                ))
+    code, lines = gate_phase4(records, model="m", budgets=[0.2])
+    assert code == 1
+    assert any("run_key" in line for line in lines)
+
+    # pinning the arms explicitly resolves it
+    code_pinned, _ = gate_phase4(
+        records, model="m", budgets=[0.2],
+        run_keys=["a-latest", "a-earliest", "a-attn_weighted"],
+    )
+    assert code_pinned != 1

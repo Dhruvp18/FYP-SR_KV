@@ -234,7 +234,78 @@ def gate_phase3(records, *, model) -> tuple[int, list[str]]:
     return 0, lines + ["PASS: conservation held and the budget was never exceeded"]
 
 
-def gate_phase4(records, *, model, budgets=None) -> tuple[int, list[str]]:
+def _resolve_phase4_arms(rows, *, run_keys=None):
+    """Keep one run_key per rope mode: the Phase 4 arm, not a neighbouring sweep.
+
+    Returns ``(rows, resolution)`` where resolution is ``None``, ``("note",
+    lines)`` for an automatic exclusion worth printing, or ``("refuse", lines)``.
+
+    When a mode is ambiguous, the modes that are *not* ambiguous define what a
+    Phase 4 arm looks like: the three arms of one sweep cover the same task
+    grid (same contexts, depths and sample indices), differing only in rope
+    mode. So the arm whose task_id set matches the unambiguous arms' is the
+    real one, and anything else is a different experiment. If nothing matches,
+    or every mode is ambiguous, this refuses rather than guessing.
+    """
+    by_mode: dict[str, dict[str, list[dict]]] = defaultdict(lambda: defaultdict(list))
+    for r in rows:
+        by_mode[r["rope_position_mode"]][r.get("run_key")].append(r)
+
+    if run_keys:
+        wanted = set(run_keys)
+        kept = [r for r in rows if r.get("run_key") in wanted]
+        if not kept:
+            return kept, ("refuse", [f"no records with run_key in {sorted(wanted)}."])
+        return kept, None
+
+    ambiguous = {m: keys for m, keys in by_mode.items() if len(keys) > 1}
+    if not ambiguous:
+        return rows, None
+
+    grids = {
+        m: frozenset(r.get("task_id") for r in next(iter(keys.values())))
+        for m, keys in by_mode.items() if len(keys) == 1
+    }
+    if not grids or len(set(grids.values())) != 1:
+        detail = "; ".join(
+            f"{m}: " + ", ".join(f"{k}={len(v)} records" for k, v in sorted(keys.items()))
+            for m, keys in sorted(ambiguous.items())
+        )
+        return rows, ("refuse", [
+            f"refusing to aggregate across run_keys [{detail}]: a rope mode with more than one "
+            "run_key means two different experiments were merged (Phase 6's alpha/beta sweep "
+            "writes sr_kv records at Phase 4's model, budget and default rope mode). No "
+            "unambiguous arm is available to identify Phase 4's own grid, so pass "
+            "--run-key <hash> once per mode to say which is which.",
+        ])
+
+    reference = next(iter(grids.values()))
+    chosen: dict[str, str] = {}
+    notes: list[str] = []
+    for mode, keys in by_mode.items():
+        matching = [k for k, v in keys.items()
+                    if frozenset(r.get("task_id") for r in v) == reference]
+        if len(matching) != 1:
+            detail = ", ".join(f"{k}={len(v)} records" for k, v in sorted(keys.items()))
+            return rows, ("refuse", [
+                f"refusing to aggregate across run_keys for {mode} [{detail}]: "
+                f"{len(matching)} of them cover Phase 4's task grid, so which one is the "
+                "Phase 4 arm is genuinely ambiguous. Pass --run-key <hash> to pick.",
+            ])
+        chosen[mode] = matching[0]
+        dropped = sorted(k for k in keys if k != matching[0])
+        if dropped:
+            notes.append(
+                f"  {mode}: using run_key {matching[0]} ({len(keys[matching[0]])} records); "
+                f"excluded {len(dropped)} run_key(s) on a different task grid "
+                f"({', '.join(dropped)}) - a different experiment, not extra samples"
+            )
+
+    kept = [r for r in rows if chosen.get(r["rope_position_mode"]) == r.get("run_key")]
+    return kept, ("note", ["scoped to one run_key per mode:"] + notes)
+
+
+def gate_phase4(records, *, model, budgets=None, scoring=None, run_keys=None) -> tuple[int, list[str]]:
     """All three conventions ran, and the best one beats the worst by more than noise."""
     rows = [
         r for r in records
@@ -257,6 +328,47 @@ def gate_phase4(records, *, model, budgets=None) -> tuple[int, list[str]]:
             f"--budget {present[0]} (repeatable) to pick one."
         ]
 
+    # The same reasoning one level down, and the same bug a second time.
+    # Phase 6's alpha/beta sweep writes `method=sr_kv` records at the very
+    # model, budget and (default) rope mode Phase 4 used, so the rope-mode
+    # filter above silently folded 270 sweep records into the attn_weighted
+    # arm alone - turning a 100-vs-100 comparison into 100-vs-370 and moving
+    # attn_weighted from 0.770 to 0.700. That is not a larger Phase 4 sample,
+    # it is a different experiment sharing a directory. Phase 4 varied exactly
+    # one knob; anything that varies another is out of scope for this gate.
+    def _knobs(r):
+        return (r.get("alpha"), r.get("beta"), r.get("lam"))
+
+    settings = sorted({_knobs(r) for r in rows}, key=lambda t: tuple((v is None, v) for v in t))
+    if scoring:
+        rows = [r for r in rows if _knobs(r) == tuple(scoring)]
+        settings = sorted({_knobs(r) for r in rows},
+                          key=lambda t: tuple((v is None, v) for v in t))
+        if not rows:
+            return 1, [f"no records with (alpha, beta, lam) == {tuple(scoring)}."]
+    if len(settings) > 1:
+        shown = ", ".join(f"alpha={a} beta={b} lam={l}" for a, b, l in settings)
+        a, b, l = settings[0]
+        return 1, [
+            f"refusing to aggregate across scoring settings [{shown}]: Phase 4 held alpha/beta/lam "
+            "fixed and varied only rope_position_mode, so records from a hyperparameter sweep "
+            "(Phase 6) are a different experiment, not extra samples. Re-run with "
+            f"--alpha {a} --beta {b} --lam {l} to pick one."
+        ]
+
+    # Pinning the knobs is still not enough on its own: Phase 6's sweep has a
+    # cell at exactly Phase 4's defaults (alpha=1.0, beta=0.3, lam=0.001), so
+    # 30 more records land in attn_weighted and nowhere else. What actually
+    # separates the two is `run_key` - the hash of the settings a single
+    # `eval/run.py` invocation was launched with, which differs because Phase 4
+    # passed --rope_position_mode explicitly and Phase 6 passed --alpha/--beta.
+    # A Phase 4 arm is one run_key covering one task grid; resume and sharding
+    # preserve that, so "one mode, several run_keys" always means two
+    # experiments were merged, never one experiment run twice.
+    rows, resolution = _resolve_phase4_arms(rows, run_keys=run_keys)
+    if resolution and resolution[0] == "refuse":
+        return 1, resolution[1]
+
     scores: dict[str, list[float]] = defaultdict(list)
     for r in rows:
         scores[r["rope_position_mode"]].append(r["accuracy"])
@@ -265,8 +377,12 @@ def gate_phase4(records, *, model, budgets=None) -> tuple[int, list[str]]:
     if missing:
         return 1, [f"missing results for mode(s) {missing}; run `make phase4`."]
 
+    lines_prefix = list(resolution[1]) if resolution and resolution[0] == "note" else []
+
     means = {m: _mean(scores[m]) for m in POSITION_MODES}
-    lines = [f"budget={present[0]}: " + ", ".join(f"{m}={means[m]:.3f}" for m in POSITION_MODES)]
+    lines = lines_prefix + [
+        f"budget={present[0]}: " + ", ".join(f"{m}={means[m]:.3f}" for m in POSITION_MODES)
+    ]
     best = max(means, key=means.get)
     worst = min(means, key=means.get)
     if means[best] <= CHANCE_CEILING:
@@ -419,7 +535,7 @@ GATES = {1: "harness sanity", 2: "baseline failure patterns", 3: "8k invariants"
 
 
 def run_gate(phase: int, records, *, model, budgets, n_samples, figures_dir,
-             explicit_budgets=None):
+             explicit_budgets=None, scoring=None, run_keys=None):
     """`explicit_budgets` is what the user actually typed, or None.
 
     Phase 4 needs that distinction: the other gates are happy with the [0.3]
@@ -434,7 +550,8 @@ def run_gate(phase: int, records, *, model, budgets, n_samples, figures_dir,
     if phase == 3:
         return gate_phase3(records, model=model)
     if phase == 4:
-        return gate_phase4(records, model=model, budgets=explicit_budgets)
+        return gate_phase4(records, model=model, budgets=explicit_budgets, scoring=scoring,
+                           run_keys=run_keys)
     if phase == 5:
         return gate_phase5(records, model=model, budgets=budgets, n_samples=n_samples)
     if phase == 6:
@@ -459,6 +576,13 @@ def main(argv=None) -> int:
     parser.add_argument("--lb-task", action="append", default=None)
     parser.add_argument("--skip-longbench", action="store_true")
     parser.add_argument("--phase", type=int, default=None, help="gate: which phase to check")
+    # Phase 4 only: pin the scoring knobs it held fixed, so a Phase 6 sweep
+    # sharing results/ cannot be counted as extra Phase 4 samples.
+    parser.add_argument("--alpha", type=float, default=None)
+    parser.add_argument("--beta", type=float, default=None)
+    parser.add_argument("--lam", type=float, default=None)
+    parser.add_argument("--run-key", action="append", default=None,
+                        help="gate 4: pin which run_key is each mode's arm")
     args = parser.parse_args(argv)
 
     records = load_records(Path(args.results_dir), include_errors=(args.command == "gate"))
@@ -474,6 +598,11 @@ def main(argv=None) -> int:
             n_samples=args.n_samples,
             figures_dir=Path(args.figures_dir),
             explicit_budgets=args.budget,
+            scoring=(
+                (args.alpha, args.beta, args.lam)
+                if None not in (args.alpha, args.beta, args.lam) else None
+            ),
+            run_keys=args.run_key,
         )
         print(f"\n=== PHASE {args.phase} GATE ({GATES.get(args.phase, '?')}) ===")
         for line in lines:
