@@ -116,6 +116,27 @@ def test_notebook_is_valid_json_and_thin(phase):
         assert forbidden not in source, f"notebook contains project logic: {forbidden}"
 
 
+def test_notebook_sets_expandable_segments_before_any_run_command():
+    """PyTorch's caching allocator fragments over hundreds of varying-shaped
+    tensors (LongBench's four tasks have very different sequence/generation
+    lengths) - confirmed for real: a run OOM'd requesting 1.15 GiB with only
+    198 MiB contiguous free, 81 successful tasks in, well after
+    torch.cuda.empty_cache() had already run between every one of them.
+    expandable_segments is PyTorch's own fix for this. It has to be an env
+    var set before any `make`/`python eval/run.py` subprocess runs, not
+    something eval/run.py sets itself, since it must apply before CUDA
+    initializes in whichever process does the allocating.
+    """
+    nb = build_notebook(5, repo="r", model="qwen2.5-1.5b", model3b="qwen2.5-3b",
+                        budget=0.3, samples=3, shard=0, num_shards=1)
+    sources = ["".join(cell["source"]) for cell in nb["cells"]]
+    full_text = "\n".join(sources)
+    assert "expandable_segments:True" in full_text
+    env_idx = next(i for i, s in enumerate(sources) if "expandable_segments" in s)
+    run_idx = next(i for i, s in enumerate(sources) if "make phase5" in s)
+    assert env_idx < run_idx, "allocator config must be set before any make/eval.run.py call"
+
+
 def test_notebook_treats_gate_exit_2_as_not_a_crash():
     """Exit 2 ("needs a human look") must not fail the kernel.
 
