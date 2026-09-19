@@ -18,6 +18,7 @@ import contextlib
 
 import torch
 from transformers.integrations.sdpa_attention import sdpa_attention_forward
+from transformers.masking_utils import ALL_MASK_ATTENTION_FUNCTIONS
 from transformers.modeling_utils import ALL_ATTENTION_FUNCTIONS, AttentionInterface
 
 SRKV_ATTN_NAME = "srkv"
@@ -52,9 +53,34 @@ def srkv_attention_forward(
 
 
 def register_srkv_attention() -> None:
-    """Make `attn_implementation="srkv"` a valid choice. Idempotent."""
+    """Make `attn_implementation="srkv"` a valid choice. Idempotent.
+
+    Registering the attention function is not sufficient. Transformers builds
+    the causal mask through a *separate* registry keyed by the same
+    implementation name, and it ships entries only for eager/sdpa/flash/flex.
+    An unregistered name yields **no mask at all**, and
+    `sdpa_attention_forward` then falls back to `is_causal = q_len > 1`.
+
+    For a prefill that is harmless, because q_len == kv_len and torch's
+    top-left and bottom-right causal alignments coincide. For a multi-token
+    forward against an already-populated cache it is silently catastrophic:
+    torch aligns a non-square causal mask to the TOP LEFT, so new token 0
+    attends to cache slot 0, token 1 to slots 0-1, and the entire cached
+    prefix becomes invisible. Measured on Qwen2.5-0.5B over Paul Graham prose
+    with an *uncompressed* cache: nll 2.75 (ppl 15.6) correct, nll 6.47
+    (ppl 646) with no mask registered - and every method degrades by the same
+    amount, so the comparison still looks orderly and means nothing.
+
+    Borrowing sdpa's mask function is exactly right, because
+    `srkv_attention_forward` delegates to sdpa: the mask it needs is the mask
+    sdpa would have got.
+    """
     if SRKV_ATTN_NAME not in ALL_ATTENTION_FUNCTIONS:
         AttentionInterface.register(SRKV_ATTN_NAME, srkv_attention_forward)
+    if SRKV_ATTN_NAME not in ALL_MASK_ATTENTION_FUNCTIONS:
+        ALL_MASK_ATTENTION_FUNCTIONS.register(
+            SRKV_ATTN_NAME, ALL_MASK_ATTENTION_FUNCTIONS["sdpa"]
+        )
 
 
 def _iter_configs(model):

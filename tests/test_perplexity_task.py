@@ -42,6 +42,54 @@ def test_measure_actually_compresses_the_cache(tiny):
     assert merging.get_stats()["n_centroids"] > 0, "clustering produced no centroids"
 
 
+def test_both_forward_passes_get_a_mask_spanning_the_cache(tiny):
+    """The continuation pass must be told how long the cache is.
+
+    Without `attention_mask`, the second call has q_len=256 against
+    kv_len=2304 and torch aligns a non-square causal mask to the TOP LEFT:
+    continuation token 0 sees cache slot 0, token 1 sees slots 0-1, and the
+    prefix the cache just spent its whole budget keeping is invisible.
+
+    This is asserted on the call arguments rather than on a loss value on
+    purpose. The tiny model has random weights, so it sits at uniform
+    perplexity whether the mask is right or wrong - pre-fix it scored 7.6152
+    against a correct 7.6133, a difference of 0.0019 that no tolerance worth
+    setting would catch. On Qwen2.5-0.5B the same bug was worth 3.72 nll
+    (ppl 15.6 -> 646), so the damage is real and only invisible at this scale.
+    """
+    model, tok = tiny
+    sample = P.build_samples(tok, context_lengths=[384], n_samples=1,
+                             continuation_tokens=32)[0]
+    cache = make_cache("snapkv_unified", model=model, budget=0.3)
+
+    seen = []
+    original = model.forward
+
+    def spy(*args, **kwargs):
+        seen.append(kwargs.get("attention_mask"))
+        return original(*args, **kwargs)
+
+    model.forward = spy
+    try:
+        P.measure(model, sample, cache)
+    finally:
+        model.forward = original
+
+    assert len(seen) == 2, f"expected a prefill and a scoring pass, saw {len(seen)}"
+    prefill, scoring = seen
+    assert prefill is not None, "prefill ran with no attention mask"
+    assert prefill.shape[-1] == len(sample.prefix_ids)
+
+    assert scoring is not None, "the scoring pass ran with no attention mask"
+    # it must cover the compressed cache plus the new tokens, not just the new
+    # tokens and not the pre-compression length
+    cached = cache.get_seq_length() - len(sample.continuation_ids)
+    assert scoring.shape[-1] == cached + len(sample.continuation_ids)
+    assert scoring.shape[-1] > len(sample.continuation_ids), (
+        "mask covers only the continuation - the cache is invisible"
+    )
+
+
 def test_uncompressed_and_compressed_differ(tiny):
     """If full and a compressed method agree exactly, compression is a no-op."""
     model, tok = tiny

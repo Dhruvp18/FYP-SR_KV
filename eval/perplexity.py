@@ -118,13 +118,25 @@ def measure(model, sample: PerplexitySample, cache, *, device=None) -> dict:
     # block runs plain SDPA, the cache never compresses, and every method
     # returns byte-identical perplexity - which is exactly what the first
     # smoke test showed (evicted=0, centroids=0, nll equal to 15 decimals).
+    # The masks span the cache as well as the new tokens. They are belt and
+    # braces - src.attn_patch registers a mask function for the "srkv"
+    # implementation, which is what actually makes the causal mask correct
+    # here - but passing them explicitly costs nothing and documents that this
+    # is the one place in the project that runs a multi-token forward against
+    # an already-populated cache.
     with attach_cache(model, cache):
-        out = model(prefix, past_key_values=cache, use_cache=True)
+        out = model(prefix, past_key_values=cache, use_cache=True,
+                    attention_mask=torch.ones_like(prefix))
         # last prefix logit predicts the first continuation token, so it is
         # part of the score and must not be dropped.
         first_logits = out.logits[:, -1:, :]
 
-        out = model(continuation, past_key_values=cache, use_cache=True)
+        mask = torch.ones(
+            (1, cache.get_seq_length() + continuation.shape[1]),
+            dtype=torch.long, device=device,
+        )
+        out = model(continuation, past_key_values=cache, use_cache=True,
+                    attention_mask=mask)
         logits = torch.cat([first_logits, out.logits[:, :-1, :]], dim=1).float()
 
     loss = torch.nn.functional.cross_entropy(

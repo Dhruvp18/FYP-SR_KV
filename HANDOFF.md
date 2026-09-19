@@ -8,11 +8,29 @@ Repo: <https://github.com/Dhruvp18/FYP-SR_KV>
 
 ---
 
-## READ THIS FIRST — all phases complete, 2026-09-19
+## READ THIS FIRST — 2026-09-20: Phases 0–7 done, Phase 8 mid-flight
 
-**Phases 0–7 are done.** Every grid is complete, every gate has been run, and
-the figures are generated. The remaining work is writing it up, plus one
-optional experiment described at the end.
+**Phases 0–7 are done and their results stand.** Every grid is complete,
+every gate has been run, the figures are generated.
+
+**Phase 8 is in progress and its first run was thrown away.** It found a real
+bug in `src/attn_patch.py` that made the whole experiment meaningless. The bug
+is fixed and the fix is verified; the experiment needs re-running. Read
+"Phase 8 — where you are picking up" below before doing anything else.
+
+### The 60-second version for whoever is next
+
+1. Phases 0–7: complete, trustworthy, **unaffected by the Phase 8 bug**
+   (proved, not assumed — see below). The headline is a clean negative:
+   centroid-merging neither helps nor hurts.
+2. Phase 8 asks whether that null is an artefact of *what was measured*. Two
+   pre-registered experiments, criterion fixed in `PREREGISTRATION.md`
+   **before** any data existed. Do not change that criterion.
+3. E1 (perplexity) ran, produced 1,350 zero-error records, and **all of them
+   are invalid**. They are quarantined in
+   `results/diagnostics/INVALID_nomask_*.jsonl`.
+4. The bug is fixed on `main`. Your job: re-run E1, then run E2, then
+   `make phase8-analyse`, and report whatever it says.
 
 ### Gate status
 
@@ -70,6 +88,162 @@ zero errors, conservation and budget invariants hold, generations checked for
 degeneration. The ablation is one class with two boolean flags, so it measures
 the mechanism rather than implementation drift — which is precisely what makes
 the null trustworthy.
+
+---
+
+## Phase 8 — where you are picking up
+
+### What Phase 8 is
+
+Phases 5/6 produced a clean null. Phase 8 asks whether that null is a property
+of the *mechanism* or an artefact of *what was measured*. Two reasons it might
+be the latter, and one experiment for each:
+
+- **E1 / H1 (metric).** Every metric so far scores n-gram overlap — NIAH is
+  exact match, LongBench uses `qa_f1` and `rouge_l`. A centroid is an
+  attention-weighted average and cannot reproduce an exact token, so those
+  metrics penalise merging by construction. Perplexity scores *distributional*
+  fidelity instead. `make phase8-perplexity`.
+- **E2 / H2 (pressure).** At budget 0.3 hard eviction costs only 2.3%, so
+  there is almost nothing for merging to recover. Budgets 0.05/0.1/0.15 give
+  it something. `make phase8-tight-longbench`.
+
+`PREREGISTRATION.md` was committed (`56593e6`) **before** any Phase 8 data
+existed, and git history is the proof of ordering. The criterion:
+`centroid_merge` vs `snapkv_unified`, paired on `sample_idx`, paired bootstrap
+10,000 resamples, 95% CI excluding zero in the predicted direction, n>=50
+pairs, at >=2 settings. **Do not change it now that you can see numbers.**
+`scripts/analyse_phase8.py` implements exactly that and nothing else, and
+always exits 0 — NOT SUPPORTED is a result to report, not a pipeline failure.
+There is deliberately no `gate8`, and `tests/test_kaggle_kernel.py` asserts
+that `check_results.py` never grows one.
+
+### The bug that invalidated E1 — read this before trusting any new numbers
+
+`attach_cache` swaps the model's attention implementation to `"srkv"`.
+`AttentionInterface.register()` registers an *attention* function — but
+transformers builds the causal mask through a **separate registry**
+(`ALL_MASK_ATTENTION_FUNCTIONS`) keyed by the same implementation name, which
+ships entries only for `eager/sdpa/flash/flex`. An unregistered name gets **no
+mask at all**, `sdpa_attention_forward` falls back to `is_causal = q_len > 1`,
+and torch aligns a non-square causal mask to the **top left**. So in a
+multi-token forward against a populated cache, new token 0 attends to cache
+slot 0, token 1 to slots 0–1, and the entire cached prefix is invisible.
+
+Bisected one variable at a time on Qwen2.5-0.5B over Paul Graham prose:
+
+    A  one forward pass, no cache            nll 2.7477   ppl   15.6
+    B  two passes, stock DynamicCache        nll 2.7477   ppl   15.6
+    C  two passes, SRKVCache at budget 1.0   nll 2.7477   ppl   15.6
+    D  C + attach_cache                      nll 6.4708   ppl  646.0   <-- here
+    E  D + an explicit attention_mask        nll 6.4708   ppl  646.0
+
+Note rung E: passing `attention_mask` to `model()` does **not** help, because
+the mask is dropped before it reaches attention. The fix is to register sdpa's
+mask function under the `srkv` name — our attention delegates to sdpa, so the
+mask it needs is the mask sdpa would have got. One-line fix in
+`src/attn_patch.py:register_srkv_attention`, and after it every rung reads
+2.7477.
+
+**Phases 1–7 are unaffected, and this was checked rather than assumed.**
+`generate()` prefills against an *empty* cache (q_len == kv_len, where torch's
+top-left and bottom-right causal alignments coincide) and then decodes one
+token at a time (q_len == 1). It never produces the shape that triggers the
+bug. Verified directly by reproducing the pre-fix state and comparing greedy
+generation token-for-token against an unpatched reference: identical.
+Perplexity scoring is the only thing in this project that runs a multi-token
+forward against a populated cache.
+
+Regression tests, in `tests/test_cache_correctness.py`:
+`test_multi_token_forward_against_a_populated_cache_matches_one_pass` and
+`test_srkv_registers_a_mask_function_not_just_an_attention_function`. Both
+were confirmed to **fail** on the pre-fix code (max logit diff 0.547), not
+merely pass on the fixed code.
+
+### Two traps that cost hours here — you will hit them too
+
+1. **`attach_cache` calls `register_srkv_attention()` on every entry.** Any
+   diagnostic that tries to reproduce the pre-fix state by popping the mask
+   function from the registry will have it silently put back before the
+   forward runs. Patch `src.attn_patch.register_srkv_attention` itself. Two
+   separate diagnostics gave confidently wrong answers before this was
+   noticed.
+2. **`import src` must precede `import transformers`** in any standalone
+   script. `src/_env.py` applies a torchvision guard; without it transformers
+   dies on `torchvision::nms`.
+
+### Why this was caught at all
+
+The uncompressed `full` arm. It was added late — and its first version had a
+bug of its own: `full` is recorded at `budget=1.0`, so it shared no setting
+key with an arm keyed `ctx=N b=0.2`, found zero pairs, and printed "no
+baseline to compare against" while the baseline sat in the same file.
+
+Once that was fixed, `full` read perplexity **5,941** where a 1.5B model on
+English prose should read 10–20. Without that reference, E1 would have read as
+a clean NOT SUPPORTED across six settings at n=50 — orderly, plausible, and
+completely wrong, because every arm was damaged by the same amount.
+
+**Keep the uncompressed reference in every comparison.** A null between two
+compressors is uninterpretable if you cannot show compression cost anything.
+
+### What to do next, in order
+
+1. `python -m pytest -q` — must be green before anything goes to Kaggle.
+2. Re-run E1. The kernel is already generated and correct:
+   `python scripts/kaggle_kernel.py run --phase 8 --user <you> --target
+   phase8-perplexity --depends-on <you>/sr-kv-phase7 --model qwen2.5-1.5b
+   --samples 50`. Roughly 1.2 GPU-hours.
+3. **Sanity-check before analysing**, every time: the `full` arm must land at
+   perplexity ~10–20. If it does not, stop — something else is broken and the
+   comparison is worthless. This check is the whole reason the first run did
+   not become a reported result.
+4. Re-push the same kernel with both targets to add E2 (~5.5h; Phase 5's 500
+   LongBench tasks took 2.27h, E2 is 1,200). E1 resumes instantly from
+   committed results.
+5. `make phase8-analyse` and report the verdict **either way**, alongside the
+   existing Phase 5/6 negatives.
+
+Kernel `dhruvp18/sr-kv-phase8` exists; re-pushing makes a new version.
+Resume works by committing pulled results to git — the kernel does `git pull`
+at startup, it does not mount its own previous output.
+
+### Kaggle practicalities that cost time on 2026-09-20
+
+- **There are no Kaggle CLI credentials on this machine.** `~/.kaggle/` does
+  not exist, so `kaggle_kernel.py push/status/pull` will fail. Everything this
+  session went through the Kaggle **MCP server**, which carries its own auth.
+  Either create an API token (Settings → API → Create New Token) or drive it
+  through MCP.
+- **`save_notebook` wants `slug` as `"<user>/<kernel>"`.** Passing just
+  `"sr-kv-phase8"` returns `Invalid slug`.
+- **`list_notebook_session_output` returns the console log too**, under a
+  `log` key alongside `files` — and it paginates at 100 files with a
+  `next_page_token`. It is far quicker to `download_notebook_output` a known
+  path directly, e.g.
+  `sr-kv/results/phase8_perplexity_qwen2.5-1.5b.jsonl`, and `curl -sL` the
+  returned URL.
+- **The kernel runs whatever is on GitHub at clone time**, not your working
+  tree. Push before you launch, and check the `git log --oneline -1` line the
+  notebook prints — E1 ran `8ccb385`, which is how it is known that the
+  in-kernel analysis was one commit behind.
+- **Corpus check before spending GPU time.** The Paul Graham essays tokenise
+  to 638,164 tokens with the Qwen tokenizer, giving 276/146/75 non-overlapping
+  windows at ctx 2048/4096/8192 against the 50 `build_samples` needs. If you
+  raise `PPL_SAMPLES` or contexts, re-check — `build_samples` raises rather
+  than silently overlapping, but it raises *after* the model has loaded.
+- **GPU quota** at the time of writing: ~9,700s used of 108,000s weekly,
+  refreshing 2026-09-26. The wasted E1 run cost ~4,400s of that.
+
+### If both hypotheses fail
+
+That is a publishable outcome, not a failure. The null then survives a change
+of metric *and* a change of compression pressure, which makes it a
+substantially stronger result than Phase 5/6 alone. `PREREGISTRATION.md`
+commits to reporting it that way, including any experiment started and
+abandoned — which now includes the invalid E1 run.
+
+---
 
 ### What would give the thesis a fair last shot
 
@@ -137,10 +311,43 @@ silently averaged** — plus three others:
 21. **`choose_precision()` under-estimates**, confirmed a fourth time: it sizes
     weights + KV + 2.5 GB and never models the attention activation.
 
+### Bugs fixed on 2026-09-20 (Phase 8)
+
+22. **No causal mask under `attach_cache`** — the one that invalidated E1.
+    Registering an attention implementation does not register a mask
+    function; transformers then builds none, sdpa falls back to
+    `is_causal=True`, and a multi-token forward against a populated cache
+    loses its entire prefix. Worth 3.72 nll on real weights. Full writeup in
+    the Phase 8 section above.
+23. **The uncompressed reference never paired.** `full` is recorded at
+    `budget=1.0`, so it shared no setting key with `ctx=N b=0.2` and the
+    analysis printed "no baseline to compare against" with the baseline in
+    the same file. It is now matched on context alone. This is the fix that
+    exposed bug 22.
+24. **The pre-registered secondary arm was not reported at all.**
+    `PREREGISTRATION.md` names `sr_kv` vs `snapkv_unified` as reported-
+    but-secondary; the script printed neither it nor the reference.
+25. **`summarize()` and gate6 completeness assumed NIAH-shaped records** —
+    perplexity rows carry no `depth` and no `tokens_per_sec`, so one raised
+    `KeyError` and the other would have mis-scored.
+
 The lesson worth carrying: **a gate passing is not evidence the figure is
 right, and a figure rendering is not evidence the number is right.** Every one
 of these was found by comparing two views of the same data and noticing they
 disagreed.
+
+Phase 8 adds a sharper corollary. E1's 1,350 records had **zero errors**,
+compression verifiably working (1,894 tokens evicted, 51 centroids, exactly
+20% of budget retained), and a plausible ordering across arms — and were
+entirely worthless. Zero errors means nothing crashed. It does not mean the
+numbers mean anything.
+
+The test that should have caught it asserted that the compressed and
+uncompressed arms *differ*. They did — by 0.49 nll, which reads as a perfectly
+sensible compression cost. **A test that only checks two numbers are unequal
+passes happily when both are garbage.** Anchor at least one number to an
+independent reference: here, a plain forward pass with no cache code in it at
+all.
 
 ---
 
@@ -465,6 +672,11 @@ paranoia.
 
 ### What's actually left to do
 
+> **2026-09-20 note.** Items 1–4 below are historical — Phases 5, 6 and 7 are
+> all complete. The live work is Phase 8, in "What to do next, in order" near
+> the top of this document. Items 5 and 6 are standing rules and still apply
+> to every run you make.
+
 1. ~~Let Phase 5 LongBench and Phase 6 sweep finish~~ — **done**, both
    verified and committed (see above). Nothing to do here.
 
@@ -579,6 +791,11 @@ from before, still true after this session's fixes:
   bearing, not a fallback. See bug #1.
 - **Centroids are re-clustered rather than kept.**
 - **The three scored conditions must stay one class.**
+- **Registering an attention implementation is only half the job.**
+  Transformers builds causal masks through a separate registry keyed by the
+  same name. `register_srkv_attention()` must register both, or there is no
+  mask at all and any multi-token forward against a populated cache silently
+  loses its prefix. See bug #22.
 
 ### What is provisional
 
@@ -600,6 +817,7 @@ freeze a mode without a passing `gate4`/`freeze_rope_mode.py` run at p < 0.05.
 | 5 | `make phase5 phase5-longbench` | `make gate5` | **exit 2 — FLAG** — grid complete (180+45 NIAH @ 0.2, 500 LongBench, 0 errors); SR-KV below both ablations |
 | 6 | `make phase6-sweep phase6-3b` | `make gate6` | **PASS** — 270/270, 0 errors |
 | 7 | `make phase7` | `make gate7` | **PASS** — 14 figures |
+| 8 | `make phase8-perplexity` then `make phase8-tight-longbench` | `make phase8-analyse` (no gate8, by design) | **E1 re-run needed** — first run invalidated by the attach_cache mask bug; E2 not started |
 
 Every gate exits `0` = proceed, `1` = failed or incomplete, `2` = needs a
 human look. **A gate returning 2 is not a bug to hide** — for gate 5 it means

@@ -67,6 +67,61 @@ def test_noop_cache_is_indistinguishable_from_dynamic_cache(tiny_model, prompt_i
     assert torch.equal(ours, reference), "the passthrough cache changed the model's output"
 
 
+def test_multi_token_forward_against_a_populated_cache_matches_one_pass(tiny_model):
+    """The patched attention must build the same causal mask sdpa would.
+
+    Registering an attention function does NOT register a mask function:
+    transformers keys mask construction off the same implementation name and
+    ships entries only for eager/sdpa/flash/flex. An unregistered name yields
+    no mask at all, sdpa falls back to `is_causal = q_len > 1`, and torch
+    aligns a non-square causal mask to the TOP LEFT - so with q_len=64 against
+    kv_len=576 the new tokens attend to cache slots 0..63 and the cached
+    prefix is invisible.
+
+    generate() never exposed this. Its prefill runs against an empty cache
+    (q_len == kv_len, where both alignments coincide) and each decode step is
+    q_len=1. A multi-token forward against a populated cache - what perplexity
+    scoring does - is the only shape that triggers it, which is why every
+    NIAH and LongBench number survived a bug worth 3.7 nll on real weights
+    (Qwen2.5-0.5B, ppl 15.6 -> 646).
+
+    Random weights are fine here: a mask this wrong moves the logits far
+    beyond tolerance even when it barely moves perplexity.
+    """
+    torch.manual_seed(11)
+    prefix = torch.randint(0, 1000, (1, 192))
+    extra = torch.randint(0, 1000, (1, 48))
+
+    with torch.no_grad():
+        reference = tiny_model(torch.cat([prefix, extra], dim=1)).logits[:, -extra.shape[1]:, :]
+
+        cache = make_cache("full", model=tiny_model)
+        with attach_cache(tiny_model, cache):
+            tiny_model(prefix, past_key_values=cache, use_cache=True,
+                       attention_mask=torch.ones_like(prefix))
+            got = tiny_model(extra, past_key_values=cache, use_cache=True).logits
+
+    assert torch.allclose(got, reference, atol=1e-4), (
+        "patched attention disagrees with a plain forward on a multi-token "
+        "pass against a populated cache - the causal mask is wrong"
+    )
+
+
+def test_srkv_registers_a_mask_function_not_just_an_attention_function(tiny_model):
+    """Pin the half of the registration that was missing."""
+    from transformers.masking_utils import ALL_MASK_ATTENTION_FUNCTIONS
+    from transformers.modeling_utils import ALL_ATTENTION_FUNCTIONS
+
+    from src.attn_patch import SRKV_ATTN_NAME, register_srkv_attention
+
+    register_srkv_attention()
+    assert SRKV_ATTN_NAME in ALL_ATTENTION_FUNCTIONS
+    assert SRKV_ATTN_NAME in ALL_MASK_ATTENTION_FUNCTIONS, (
+        "no mask function registered - transformers will build no causal mask "
+        "for this implementation"
+    )
+
+
 def test_noop_cache_evicts_nothing(tiny_model, prompt_ids):
     cache = make_cache("full", model=tiny_model)
     _generate(tiny_model, cache, prompt_ids)
