@@ -155,12 +155,12 @@ freeze-rope:
 phase5:
 	$(PY) eval/run.py --method streaming_llm,snapkv_unified,centroid_merge,sr_kv \
 	  --model $(MODEL) --task niah \
-	  --context_len 2048,4096,8192,16384 --depths 0,25,50,75,100 \
+	  --context_len 2048,4096,8192 --depths 0,25,50,75,100 \
 	  --budget $(BUDGET) --n_samples $(SAMPLES) \
 	  --shard $(SHARD) --num_shards $(NSHARDS) \
 	  --output $(RESULTS)/phase5_niah_$(MODEL).json
 	$(PY) eval/run.py --method full --model $(MODEL) --task niah \
-	  --context_len 2048,4096,8192,16384 --depths 0,25,50,75,100 \
+	  --context_len 2048,4096,8192 --depths 0,25,50,75,100 \
 	  --budget 1.0 --n_samples $(SAMPLES) --shard $(SHARD) --num_shards $(NSHARDS) \
 	  --output $(RESULTS)/phase5_niah_full_$(MODEL).json
 

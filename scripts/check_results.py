@@ -37,7 +37,20 @@ from scripts.make_plots import load_records  # noqa: E402
 from src.rope_positions import POSITION_MODES  # noqa: E402
 
 FACTORIAL = ["streaming_llm", "snapkv_unified", "centroid_merge", "sr_kv"]
-DEFAULT_CONTEXTS = [2048, 4096, 8192, 16384]
+# 16384 is deliberately absent. Measured on real T4s, qwen2.5-1.5b in bf16
+# peaks at 5.11 GiB at ctx=4096 (n=210) and 10.96 GiB at ctx=8192 (n=603),
+# so 16384 lands around 16.8 GiB against a 14.56 GiB card - and an external
+# run did OOM there, on the first `full` task. Compression does not save it:
+# those 8192 figures are already with a compressed cache, because the peak is
+# prefill attention over the full sequence, which every method pays before any
+# eviction runs (see CLAUDE.md A2).
+#
+# This is a recorded scope reduction, not a loosened gate: the pass conditions
+# are untouched, only the grid is narrowed to what the hardware can measure,
+# and the NIAH claim is therefore "the factorial at 2k-8k". Worth stating
+# plainly in the writeup, because 16k is where KV compression matters most -
+# this is a hardware limit, not evidence about the method.
+DEFAULT_CONTEXTS = [2048, 4096, 8192]
 DEFAULT_DEPTHS = [0, 25, 50, 75, 100]
 #: phase6-3b's own method/context list (includes "full"; Makefile's own spec)
 PHASE6_METHODS = ["full", "streaming_llm", "snapkv_unified", "centroid_merge", "sr_kv"]

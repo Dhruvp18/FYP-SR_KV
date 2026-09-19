@@ -421,8 +421,15 @@ def test_gate4_notes_when_the_modes_are_indistinguishable():
 
 
 def test_gate5_flags_srkv_losing_to_both_ablations():
+    # Build the grid from the gate's own context list, not a literal. This
+    # hardcoded 16384 when the NIAH grid still had a 16k column; dropping it
+    # (bf16 needs ~16.8 GiB there against a 14.56 GiB T4) left this test
+    # generating a column the gate no longer looks at - harmless here, but the
+    # same shape as the gate6 tests that silently stopped testing anything.
+    from scripts.check_results import DEFAULT_CONTEXTS
+
     records = []
-    for context in (2048, 4096, 8192, 16384):
+    for context in DEFAULT_CONTEXTS:
         for depth in (0, 25, 50, 75, 100):
             records += [
                 _niah("streaming_llm", 0.3, context_len=context, depth=depth),
