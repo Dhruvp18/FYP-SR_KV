@@ -22,7 +22,7 @@ FIGURES ?= figures
 SHARD   ?= 0
 NSHARDS ?= 1
 
-.PHONY: help test configs \
+.PHONY: help test configs phase8-perplexity phase8-tight-longbench phase8-analyse \
         phase1 phase1-4bit phase2 phase3 phase4 phase4-scan freeze-rope \
         phase5 phase5-longbench phase5-recompress-probe phase6-sweep phase6-3b-scan phase6-3b phase7 \
         gate1 gate2 gate3 gate4 gate5 gate6 gate7 \
@@ -45,6 +45,9 @@ help:
 	@echo "  make phase6-sweep      - alpha/beta sweep on 1.5B"
 	@echo "  make phase6-3b         - transfer the frozen config to 3B -> make gate6"
 	@echo "  make phase7            - regenerate every figure          -> make gate7"
+	@echo "  make phase8-perplexity - E1: does merging win on perplexity?"
+	@echo "  make phase8-tight-longbench - E2: does merging win at budget 0.05-0.15?"
+	@echo "  make phase8-analyse    - the pre-registered test (PREREGISTRATION.md)"
 	@echo ""
 	@echo "Each gateN exits non-zero if that phase's pass condition is not met."
 
@@ -312,6 +315,51 @@ phase6-3b:
 gate6:
 	$(PY) scripts/check_results.py gate --phase 6 --model $(MODEL3B) \
 	  $(foreach b,$(subst $(COMMA), ,$(BUDGETS6)),--budget $(b)) --n-samples $(SAMPLES)
+
+# --- Phase 8: does centroid-merging help anywhere? -------------------------
+# Pre-registered in PREREGISTRATION.md BEFORE any of this was run. The success
+# criterion (paired bootstrap, 95% CI excluding zero in the predicted
+# direction, n>=50, holding at >=2 settings) is fixed there and must not move.
+#
+# Phases 5/6 gave a clean null for clustering. Two reasons that may be about
+# what was measured rather than the mechanism: every metric so far scores
+# n-gram overlap, which a centroid cannot produce by construction, and
+# compression has been so cheap (hard eviction -2.3%) that there is nothing to
+# recover. E1 changes the metric, E2 changes the pressure.
+PPL_SAMPLES ?= 50
+PPL_CONTEXTS ?= 2048,4096,8192
+PPL_BUDGETS ?= 0.2,0.3
+
+phase8-perplexity:
+	$(PY) eval/run.py --method streaming_llm,snapkv_unified,centroid_merge,sr_kv \
+	  --model $(MODEL) --task perplexity \
+	  --context_len $(PPL_CONTEXTS) --budget $(PPL_BUDGETS) \
+	  --n_samples $(PPL_SAMPLES) --precision bf16 \
+	  --output $(RESULTS)/phase8_perplexity_$(MODEL).json
+	$(PY) eval/run.py --method full \
+	  --model $(MODEL) --task perplexity \
+	  --context_len $(PPL_CONTEXTS) --budget 1.0 \
+	  --n_samples $(PPL_SAMPLES) --precision bf16 \
+	  --output $(RESULTS)/phase8_perplexity_full_$(MODEL).json
+
+# E2: the same LongBench grid Phase 5 ran, at budgets where hard eviction
+# should actually start losing information rather than redundancy.
+TIGHT_BUDGETS ?= 0.05,0.1,0.15
+
+# Settings match phase5-longbench exactly (n_samples 25, same
+# recompress_slack, same four tasks) apart from the budget. Anything else
+# differing would confound "tighter budget" with "different setup".
+phase8-tight-longbench:
+	for method in streaming_llm snapkv_unified centroid_merge sr_kv; do \
+	  $(PY) eval/run.py --method $$method \
+	    --model $(MODEL) --task longbench --budget $(TIGHT_BUDGETS) --n_samples 25 \
+	    --recompress_slack $(RECOMPRESS_SLACK) \
+	    --shard $(SHARD) --num_shards $(NSHARDS) \
+	    --output $(RESULTS)/phase8_tight_longbench_$(MODEL).json || exit 1; \
+	done
+
+phase8-analyse:
+	$(PY) scripts/analyse_phase8.py
 
 # --- Phase 7: every figure, one command ------------------------------------
 phase7 plots report_artifacts:

@@ -54,6 +54,19 @@ PHASES: dict[int, dict] = {
         "note": "No re-sweep on 3B: the question is whether the 1.5B config transfers."},
     7: {"title": "figures", "targets": ["phase7"], "gate": "gate7",
         "note": "Regenerates every figure from results/ in one command."},
+    # Phase 8's "gate" is not a check_results gate. Its pass condition was
+    # written down in PREREGISTRATION.md before any data existed and is
+    # evaluated by scripts/analyse_phase8.py, which always exits 0: NOT
+    # SUPPORTED is a result to report, not a pipeline failure. `local_gate`
+    # is what cmd_run runs instead of `check_results.py gate --phase 8`,
+    # which does not exist and must not be invented after seeing numbers.
+    8: {"title": "pre-registered follow-ups (E1 perplexity, E2 tight budgets)",
+        "targets": ["phase8-perplexity", "phase8-tight-longbench"],
+        "gate": "phase8-analyse",
+        "local_gate": ["python", "scripts/analyse_phase8.py"],
+        "note": "Tests whether centroid-merging wins under a distributional metric (H1) "
+                "or under real compression pressure (H2). Criterion fixed in "
+                "PREREGISTRATION.md; do not change it after seeing results."},
 }
 
 POLL_SECONDS = 120
@@ -455,9 +468,10 @@ def cmd_run(args) -> int:
         print("\n(--skip-gate: diagnostic run, no pass condition to check)")
         return 0
 
-    gate = ["python", "scripts/check_results.py", "gate", "--phase", str(args.phase),
-            "--model", args.model3b if args.phase == 6 else args.model,
-            "--budget", str(args.budget), "--n-samples", str(args.samples)]
+    gate = PHASES[args.phase].get("local_gate") or [
+        "python", "scripts/check_results.py", "gate", "--phase", str(args.phase),
+        "--model", args.model3b if args.phase == 6 else args.model,
+        "--budget", str(args.budget), "--n-samples", str(args.samples)]
     print("\n+ " + " ".join(gate))
     return subprocess.run(gate, cwd=REPO_ROOT).returncode
 

@@ -110,10 +110,20 @@ def _save(fig, path: Path) -> Path:
 #: reports 1.000 because check_ablation filters on context_len. Same
 #: cross-experiment blending as the Phase 4 gate and the precision key; figures
 #: get the same guard, and split by task instead of hiding one.
-TASKS = (("niah", "NIAH"), ("longbench", "LongBench"))
+TASKS = (("niah", "NIAH"), ("longbench", "LongBench"), ("perplexity", "Perplexity"))
 
 
 def _task_of(record) -> str:
+    """Prefer the explicit field; fall back only for records written before it.
+
+    Perplexity records carry a context_len, so the old heuristic would file
+    them as NIAH and average negative-NLL into an exact-match panel. Records
+    written before `task` existed are only ever niah or longbench, so the
+    fallback stays correct for them.
+    """
+    task = record.get("task")
+    if task:
+        return task
     return "niah" if record.get("context_len") is not None else "longbench"
 
 

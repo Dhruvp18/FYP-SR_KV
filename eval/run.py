@@ -33,7 +33,7 @@ if str(REPO_ROOT) not in sys.path:
 import src  # noqa: E402,F401  (environment guards, must precede transformers)
 import torch  # noqa: E402
 
-from eval import longbench, niah  # noqa: E402
+from eval import longbench, niah, perplexity  # noqa: E402
 from eval.memory import build_prompt, generate_and_measure  # noqa: E402
 from scripts.checkpoint_utils import (  # noqa: E402
     ResultStore,
@@ -56,7 +56,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--method", type=_csv(str), default=None,
                    help=f"comma-separated; one of {sorted(METHODS)} (or supply via --config)")
     p.add_argument("--model", default="qwen2.5-1.5b")
-    p.add_argument("--task", default="niah", choices=["niah", "longbench"])
+    p.add_argument("--task", default="niah", choices=["niah", "longbench", "perplexity"])
     p.add_argument("--context_len", type=_csv(int), default=[4096])
     p.add_argument("--budget", type=_csv(float), default=[0.3])
     p.add_argument("--output", default=None,
@@ -184,7 +184,17 @@ def build_task_list(args) -> list[dict]:
     tasks: list[dict] = []
     for method in args.method:
         for budget in args.budget:
-            if args.task == "niah":
+            if args.task == "perplexity":
+                for context_len in args.context_len:
+                    for sample_idx in range(args.n_samples):
+                        tasks.append({
+                            "method": method,
+                            "budget": budget,
+                            "context_len": context_len,
+                            "sample_idx": sample_idx,
+                            "task_id": f"ppl/ctx{context_len}/s{sample_idx}",
+                        })
+            elif args.task == "niah":
                 for context_len in args.context_len:
                     for depth in args.depths:
                         for sample_idx in range(args.n_samples):
@@ -303,6 +313,17 @@ def main(argv=None) -> int:
             )
         }
         score_fn = niah.score
+    elif args.task == "perplexity":
+        samples = {
+            s.task_id: s
+            for s in perplexity.build_samples(
+                tokenizer,
+                context_lengths=sorted({t["context_len"] for t in todo}),
+                n_samples=args.n_samples,
+                seed=args.seed,
+            )
+        }
+        score_fn = perplexity.score
     else:
         samples = {
             s.task_id: s
@@ -334,14 +355,16 @@ def main(argv=None) -> int:
         if watchdog > 0:
             faulthandler.dump_traceback_later(watchdog, exit=True)
         sample = samples[task["task_id"]]
-        max_new = getattr(sample, "max_new_tokens", args.max_new_tokens)
-        prompt = build_prompt(tokenizer, sample.context, sample.question)
-
         cache = make_cache(task["method"], model=model, budget=task["budget"], **overrides)
         try:
-            result = generate_and_measure(
-                model, tokenizer, prompt, cache, max_new_tokens=max_new
-            )
+            if args.task == "perplexity":
+                result = perplexity.measure(model, sample, cache)
+            else:
+                max_new = getattr(sample, "max_new_tokens", args.max_new_tokens)
+                prompt = build_prompt(tokenizer, sample.context, sample.question)
+                result = generate_and_measure(
+                    model, tokenizer, prompt, cache, max_new_tokens=max_new
+                )
         except torch.cuda.OutOfMemoryError as exc:
             free_cuda_memory()
             record = {
@@ -365,9 +388,21 @@ def main(argv=None) -> int:
             "run_key": keys[id(task)],
             "model": "tiny" if args.tiny else args.model,
             "precision": getattr(model, "srkv_precision", "tiny"),
-            "accuracy": score_fn(sample, result["generated_text"]),
+            # Explicit, not inferred. Figures previously decided "this is
+            # NIAH" from `context_len is not None`, and perplexity records
+            # carry a context_len too - without this field they would be
+            # averaged into the NIAH panels, which is the same
+            # cross-experiment blending that has bitten this project five
+            # times. Anything reading records should branch on `task`.
+            "task": args.task,
+            "accuracy": (
+                score_fn(sample, result)
+                if args.task == "perplexity"
+                else score_fn(sample, result["generated_text"])
+            ),
             **{k: v for k, v in result.items() if k != "generated_text"},
-            "generated_text": result["generated_text"][:400],
+            **({} if args.task == "perplexity"
+               else {"generated_text": result["generated_text"][:400]}),
         }
         store.append(record)
         if watchdog > 0:
@@ -408,14 +443,33 @@ def summarize(records: list[dict]) -> dict:
     out = {}
     for (method, budget, ctx), rows in sorted(groups.items(), key=lambda kv: str(kv[0])):
         n = len(rows)
-        out[f"{method}|budget={budget}|{ctx}"] = {
+        def mean(field):
+            vals = [r[field] for r in rows if field in r]
+            return sum(vals) / len(vals) if vals else None
+
+        def peak(field, default=0):
+            vals = [r[field] for r in rows if field in r]
+            return max(vals) if vals else default
+
+        summary = {
             "n": n,
-            "accuracy": sum(r["accuracy"] for r in rows) / n,
-            "max_memory_allocated": max(r["max_memory_allocated"] for r in rows),
-            "tokens_per_sec": sum(r["tokens_per_sec"] for r in rows) / n,
-            "n_tokens_cached": max(r["cache_stats"]["n_tokens_cached"] for r in rows),
-            "budget_used_pct_max": max(r["budget_used_pct_max"] for r in rows),
+            "accuracy": mean("accuracy"),
+            "max_memory_allocated": peak("max_memory_allocated"),
+            "n_tokens_cached": max(
+                (r["cache_stats"]["n_tokens_cached"] for r in rows if "cache_stats" in r),
+                default=0,
+            ),
+            "budget_used_pct_max": peak("budget_used_pct_max"),
         }
+        # Fields that only some task types produce. A perplexity row has no
+        # tokens_per_sec (nothing is generated) and a generation row has no
+        # perplexity; emitting only what exists keeps the summary honest
+        # instead of inventing a zero.
+        for field in ("tokens_per_sec", "perplexity", "nll"):
+            value = mean(field)
+            if value is not None:
+                summary[field] = value
+        out[f"{method}|budget={budget}|{ctx}"] = summary
     n_errors = sum(1 for r in records if "error" in r)
     if n_errors:
         out["_errors"] = n_errors

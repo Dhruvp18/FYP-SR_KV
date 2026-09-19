@@ -523,6 +523,35 @@ def test_gate6_fails_on_oom_rather_than_quietly_dropping_cells():
     assert code == 1
 
 
+def test_phase8_gate_is_the_preregistered_analysis_not_a_check_results_gate():
+    """The Phase 8 pass condition must stay the one committed before the data.
+
+    check_results.py has no gate8, and adding one after Phase 8 numbers are
+    visible would be exactly the move PREREGISTRATION.md forbids. Pinning
+    `local_gate` here means a future "just add a gate8" cannot slip past
+    review: this test has to be deleted deliberately to do it.
+    """
+    spec = PHASES[8]
+    assert spec["local_gate"] == ["python", "scripts/analyse_phase8.py"]
+    assert spec["gate"] == "phase8-analyse"
+    assert "gate8" not in spec["gate"]
+
+    source = (REPO_ROOT / "scripts" / "check_results.py").read_text(encoding="utf-8")
+    assert "def gate_phase8" not in source, (
+        "a gate8 appeared in check_results.py; the Phase 8 criterion lives in "
+        "PREREGISTRATION.md and scripts/analyse_phase8.py, and moving it is "
+        "moving the goalposts"
+    )
+
+
+def test_phase8_notebook_runs_both_experiments_before_the_analysis():
+    commands = build_commands(8, model="qwen2.5-1.5b", model3b="qwen2.5-3b",
+                              budget=0.3, samples=50, shard=0, num_shards=1)
+    analyse = next(i for i, c in enumerate(commands) if "phase8-analyse" in c)
+    for target in ("phase8-perplexity", "phase8-tight-longbench"):
+        assert analyse > next(i for i, c in enumerate(commands) if target in c)
+
+
 def test_gate7_rejects_empty_canvases(tmp_path):
     assert gate_phase7(tmp_path)[0] == 1
 

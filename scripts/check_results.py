@@ -135,6 +135,11 @@ def check_completeness(records, *, model, budgets, methods, contexts, depths, n_
             continue
         if "error" in r:
             continue
+        # Perplexity records carry a context_len but no depth, so the branch
+        # below would KeyError on them, and counting them as NIAH cells would
+        # be wrong anyway. Gates 5 and 6 are about niah/longbench only.
+        if r.get("task") == "perplexity":
+            continue
         if r.get("context_len") is not None:
             have[(r["method"], r["budget"], r["context_len"], r["depth"])] += 1
         elif r.get("lb_task"):
@@ -162,7 +167,9 @@ def check_ablation(records, *, model) -> list[dict]:
     """SR-KV against its two ingredient-ablated siblings, per budget."""
     rows = [r for r in records
             if (not model or r.get("model") == model)
-            and r.get("context_len") is not None and "error" not in r]
+            and r.get("context_len") is not None and "error" not in r
+            # negative NLL is not an accuracy and must not be averaged with one
+            and r.get("task") != "perplexity"]
 
     by: dict[tuple, list[float]] = defaultdict(list)
     for r in rows:
