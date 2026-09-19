@@ -252,8 +252,14 @@ attention score, consistent with SR-KV's scoring design elsewhere), explicitly
 re-open this without a real reason; two properly-powered experiments already
 answered it.
 
-**Phase 5 — LongBench half: DONE, verified, committed.** NIAH half: not
-started. LongBench needed five separate real-bug fixes to run cleanly (see
+**Phase 5 — LongBench half: DONE, verified, committed.** NIAH half: RUN,
+but saturated and its records were never committed. Chaitra reports running
+the NIAH factorial and getting 1.000 everywhere, which is why the project
+pivoted to LongBench. Committed Phase 3 data corroborates it exactly: at
+budget=0.3, ctx=8192, `sr_kv`/`centroid_merge`/`snapkv_unified` all score
+1.000 at depths 0/50/100 (n=3 each). So `gate5` reporting INCOMPLETE is
+accurate about the *files* and misleading about the *work*: the grid was
+measured, it just measured a ceiling, and nothing was kept. LongBench needed five separate real-bug fixes to run cleanly (see
 "What actually happened" below), and even the first clean 500/500 run turned
 up a genuine correctness bug (repetition collapse in `sr_kv`/`centroid_merge`
 on long generations, fixed via `recompress_slack=16`). The *re-verified* run
@@ -481,12 +487,15 @@ paranoia.
    earlier OOMs. Don't skip this check to save five minutes and risk losing
    hours the way LongBench did.
 
-3. **Phase 5's NIAH half hasn't been run yet at all.** Given what Phase 3/4
-   already showed (budget=0.3 saturates to a ceiling at 8k — every method
-   ties at 1.000, which proves nothing), seriously consider whether the
-   default `BUDGET=0.3` is the right choice for the NIAH factorial before
-   committing GPU-hours to it, the same way a cheap scan found `budget=0.2`
-   for Phase 4. The strategic read from earlier in this project: NIAH
+3. **Phase 5's NIAH half was run at BUDGET=0.3 and saturated at 1.000; do
+   not simply re-run it.** That is a measured ceiling, not a missing
+   experiment (Phase 3's committed records show the same thing), and
+   repeating it at 0.3 buys nothing. Either re-run at a discriminating
+   budget — 0.2 is where Phase 4 measured mid-range accuracy, found via a
+   cheap scan — so the grid and the heatmaps say something, or record the
+   saturation as the finding and stop treating gate5's NIAH requirement as
+   outstanding work. What is NOT acceptable is leaving it looking unrun:
+   the result exists, the files just were not kept. The strategic read from earlier in this project: NIAH
    exact-match retrieval structurally can't show centroid-merging beating
    hard-eviction (a centroid is an average, it can't reproduce an exact
    token) — LongBench (especially `gov_report`, summarization) is where the
