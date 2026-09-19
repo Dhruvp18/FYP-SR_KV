@@ -8,150 +8,141 @@ Repo: <https://github.com/Dhruvp18/FYP-SR_KV>
 
 ---
 
-## READ THIS FIRST — current state, 2026-09-19 (Phase 6 3B)
+## READ THIS FIRST — all phases complete, 2026-09-19
 
-Phase 6's 3B transfer is **83/270 records done and committed**, resumable, and
-blocked on one thing a human has to do. Everything else in this section is
-either a fix that landed or a dead end you should not repeat.
+**Phases 0–7 are done.** Every grid is complete, every gate has been run, and
+the figures are generated. The remaining work is writing it up, plus one
+optional experiment described at the end.
 
-### The blocker, first, because it decides what you do next
+### Gate status
 
-`qwen2.5-3b` is 5.8 GiB and every Kaggle session downloads it from the
-Hugging Face Hub **unauthenticated**, which is now throttled hard enough to
-consume an entire session. Attempt D sat at `Fetching 2 files: 0%` for 7.5
-hours. Cycles 3, 4, 5 and 6 each banked **zero tasks** for the same reason.
+| phase | gate | result |
+|---|---|---|
+| 1 | gate1 | PASS |
+| 2 | gate2 | PASS |
+| 3 | gate3 | PASS |
+| 4 | gate4 | exit 2 — no significant difference between RoPE modes (p=1.000) |
+| 5 | gate5 | **exit 2 — FLAG: SR-KV below both ablations** |
+| 6 | gate6 | PASS |
+| 7 | gate7 | PASS |
 
-**Fix it by adding an `HF_TOKEN` Kaggle secret to the account you run under**
-(notebook editor → Add-ons → Secrets, name it exactly `HF_TOKEN`, value = an
-HF access token). Unauthenticated Hub downloads are rate-limited per IP and
-Kaggle's egress is shared, which is why repeated 6 GB pulls degrade. A token
-removes the limit. The kernels already read that secret if it exists.
+Exit 2 is "a human must look", not failure. Both 2s are real findings.
 
-The obvious alternative — mount Kaggle's own `qwen-lm/qwen2.5` mirror, which
-is local disk with no rate limit — **does not work through the Kaggle MCP
-server**. `save_notebook`'s `modelDataSources` is accepted and silently
-ignored: a probe kernel pushed with four different ref spellings at once
-(`.../Transformers/3b-instruct/1`, `.../transformers/3b-instruct/1`,
-version-less, and `pytorch/`) reported `/kaggle/input: []` and zero
-safetensors. If you drive Kaggle with the **CLI** instead, put
-`"model_sources": ["qwen-lm/qwen2.5/Transformers/3b-instruct/1"]` in
-`kernel-metadata.json`, mount it, and set:
+### Data on disk, all zero-error
 
-    SRKV_MODEL_PATHS="qwen2.5-3b=/kaggle/input/qwen2.5/transformers/3b-instruct/1"
+    phase5_niah_qwen2.5-1.5b        180/180   (budget 0.2)
+    phase5_niah_full_qwen2.5-1.5b    45/45
+    phase5_longbench_qwen2.5-1.5b   500/500
+    phase6_sweep_*                  270/270   (alpha/beta, 9 cells)
+    phase6_niah_qwen2.5-3b          240/240
+    phase6_niah_full_qwen2.5-3b      30/30
+    figures/                         14 figures
 
-`src/models.py` reads that env var and maps alias → local path. It is
-deliberately alias → path and not "pass the path as `--model`": `args.model`
-is what every record, every `run_key` and every gate filter carries, so a
-mount point there renames the model mid-phase and splits the results into two
-incomparable groups.
+### The headline result, stated plainly
 
-### How to actually run it (the procedure that works)
+SR-KV's central claim is that clustering evicted tokens into centroids
+preserves more than dropping them. **The data does not support it.**
+`centroid_merge` (clustering, no recency) against `snapkv_unified` (hard
+eviction), the exact one-flag comparison the whole design exists to make:
 
-A 3B session wedges: the process stops making progress, writes nothing more,
-and **cannot be killed from inside** — a `timeout -k 30` with a 600s limit sat
-on one for 12.5 hours. Only external cancellation recovers it. But every
-finished task is fsynced and the run resumes, so:
+    NIAH 1.5B @ budget 0.2     1.000  vs  1.000
+    NIAH 3B    (both budgets)  0.983  vs  0.983
+    LongBench 1.5B @ 0.3       0.248  vs  0.249
 
-    launch → let it work ~30 min → cancel the session via the API →
-    download results/phase6_niah_qwen2.5-3b.jsonl from the cancelled
-    kernel's output → commit → relaunch
+Identical to three decimals on NIAH, within 0.001 on LongBench. Clustering
+neither helps nor hurts anywhere measured.
 
-Cycle 1 banked +47 tasks that way in ~35 minutes; a 10-hour unattended
-session banked 16. The work itself is ~6s/task — all 270 tasks are about 30
-minutes of real compute. Everything else is the wedge.
+The recency term is worse than neutral. `sr_kv` is the weakest scored method
+in all three evaluations, and gate5 flags it below both of its own ablations
+at budget 0.2: 0.733 against 1.000 and 1.000. The mechanism is established,
+not guessed — accuracy rises monotonically with needle depth:
 
-Two things that do **not** help, both tested:
-- **Two concurrent kernels.** Both banked zero. The "2 concurrent GPU
-  sessions" allowance is nominal; they starve each other. One at a time.
-- **Per-chunk `timeout`.** See above, it cannot reap a wedged CUDA process.
+    depth      0     25     50     75    100
+    sr_kv  0.667  0.333  0.667  1.000  1.000
 
-Always make the notebook **assert the mount exists** before doing anything
-else. Cycle 6 printed `mount exists: False` and carried on into the throttled
-Hub, costing a session; the assert version failed in 9.7 seconds instead.
+NIAH places the needle uniformly at random, so a recency prior evicts
+early-placed needles. `centroid_merge` and `snapkv_unified` have recency off
+and are unaffected. Phase 6's beta sweep predicted exactly this gradient, and
+the factorial reproduced it independently at a fixed config.
 
-### Phase 6's shape changed, and why
+This is a clean negative result, not a broken experiment: 1,000+ records,
+zero errors, conservation and budget invariants hold, generations checked for
+degeneration. The ablation is one class with two boolean flags, so it measures
+the mechanism rather than implementation drift — which is precisely what makes
+the null trustworthy.
 
-- **bf16, contexts 2048 and 4096 only. No 8192 on 3B.** bf16 at 8192 OOMs on a
-  T4 (asked 4.05 GiB with 3.91 free). 4-bit fits (11.96 GiB peak, 1.000
-  accuracy, ~32s/task) but hangs. This is a recorded scope reduction: the
-  transfer claim is "the 1.5B-tuned config transfers to 3B at 2k–4k", with no
-  8192 evidence on 3B. `PHASE6_CONTEXTS` carries the same note.
-- **alpha=2.0, beta=0.3 frozen.** The sweep's literal optimum is beta=0, which
-  is rank-identical to `use_recency=False` and would collapse `sr_kv` into
-  `centroid_merge`, voiding the recency ablation. alpha=2.0/beta=0.3 is the
-  best cell where SR-KV is still SR-KV: 0.833 vs 0.500 at the old alpha=1.0.
-  Phases 4 and 5 ran at alpha=1.0 and must not be described as running the
-  frozen config.
-- **Both budgets 0.2 and 0.3**, because 0.3 saturates at 8k and proves nothing.
+### What would give the thesis a fair last shot
 
-### What the 83 records already show (partial, not a result)
+The one condition never tested: **LongBench at a tighter budget (0.1–0.15).**
+Everything measured so far sits where compression is nearly free — LongBench
+at 0.3 has hard eviction at 0.249 against uncompressed 0.255, so there is
+almost nothing for merging to recover. NIAH cannot test the claim at all by
+construction: a centroid is an average and cannot reproduce an exact token.
+If centroid-merging has an advantage anywhere, it is where hard eviction
+starts losing real information. `make phase5-longbench BUDGET=0.1` is the run.
 
-    method           budget    ctx   n    acc
-    streaming_llm       0.2   2048  15  0.200
-    streaming_llm       0.2   4096  15  0.200
-    streaming_llm       0.3   2048  15  0.400
-    streaming_llm       0.3   4096  15  0.400
-    snapkv_unified      0.2   2048  15  0.933
-    snapkv_unified      0.2   4096   8  1.000
+### Scope reductions, both hardware-forced and both recorded
 
-`streaming_llm` far below `snapkv_unified` is the expected scored-vs-structural
-split reproducing at 3B, so the harness is behaving. Remaining: `sr_kv` (60),
-`centroid_merge` (60), `full` (30), `snapkv_unified` (37).
+- **No 16384 on 1.5B.** Measured bf16 peaks: 5.11 GiB at 4096 (n=210), 10.96
+  at 8192 (n=603), so 16384 lands near 16.8 against a 14.56 GiB T4.
+- **No 8192 on 3B.** bf16 OOM'd (4.05 GiB requested, 3.91 free); 4-bit fits
+  but was unreliable.
+
+Compression does not rescue either: the peak is prefill attention over the
+full sequence, which every method pays before any eviction runs (CLAUDE.md
+A2). So the honest scope is **NIAH factorial at 2k–8k on 1.5B, transfer at
+2k–4k on 3B**, and 16k — where KV compression matters most — is untested for
+hardware reasons, not measured and found wanting.
+
+### How to run this on Kaggle without losing days
+
+Measured throughput, qwen2.5-1.5b bf16: ~3s/task at 2048, ~7s at 4096, ~20s
+at 8192. Flat within a context. A cumulative rate that appears to fall is just
+the grid walking up the context ladder — it is not a stall, and twice this
+session a perfectly healthy run was cancelled because of that misreading.
+
+- **One kernel at a time.** Two concurrent GPU sessions banked zero tasks each.
+- **Few large `eval/run.py` invocations, not many small ones.** Per-chunk
+  isolation, added as a safety measure, was itself the cause of four
+  consecutive zero-progress cycles; removing it banked 157 tasks in one go.
+- **Tee everything to a file under /kaggle/working.** Kaggle truncates the
+  kernel log at ~120s, so a stall after that point leaves no evidence at all.
+  A persistent log is what finally made throughput visible.
+- `SRKV_WATCHDOG_SECONDS=300` turns a hung task into a stack trace.
+- Assert that any mounted data source exists. `modelDataSources` is silently
+  ignored by the Kaggle MCP server: a probe with four ref spellings reported
+  `/kaggle/input: []`, and a notebook that printed "mount exists: False" and
+  carried on cost a whole session.
 
 ### Bugs fixed this session
 
-16. **Phase 6's sweep was being counted as extra Phase 4 RoPE samples.** Both
-    write `method=sr_kv` for qwen2.5-1.5b at budget=0.2, and Phase 6 ran at the
-    default rope mode, so gate4 folded all 270 sweep records into the
-    `attn_weighted` arm: 100-vs-100 became 100-vs-370 and `attn_weighted` moved
-    0.770 → 0.700, p=1.000 → 0.264. Nothing was re-run; a published number moved
-    because a different experiment shared a directory. `freeze_rope_mode.py` had
-    it too. Fixed with an alpha/beta/lam guard plus a `run_key` guard (the thing
-    that actually separates them), sharing one resolver so the gate and the
-    freeze cannot drift apart. Phase 4 reproduces again at 76/76/77, p=1.000.
-17. **`gate6` could never have passed.** Its completeness check expects the
-    uncompressed reference at `budget=1.0`, but runs recorded `full` at whatever
-    `--budget` was passed. `full` now gets its own invocation at `--budget 1.0`.
-18. **`precision` was not in `run_key`.** The 57 salvaged 4-bit records shared
-    `task_id` *and* `run_key` with their bf16 counterparts, so `is_done` would
-    have marked every bf16 task complete and the run would have reported a
-    finished grid it never measured. Precision is now part of the key; the 4-bit
-    records are quarantined in `results/diagnostics/` (excluded by
-    `load_records`' non-recursive glob); and `gate6` refuses to mix precisions
-    the way gate4 refuses to mix budgets.
-19. **Two gate6 tests rotted silently when 8192 left the scope.** Both asserted
-    "a missing cell is caught" using a hardcoded 8192; once the gate stopped
-    looking there, the grid was complete and the assertion failed. Written the
-    other way round they would have passed while testing nothing. They now read
-    `PHASE6_CONTEXTS[-1]`.
-20. **`choose_precision()` under-estimates, confirmed a fourth time.** Its auto
-    mode sizes weights + uncompressed KV + 2.5 GB headroom and never models the
-    attention activation, which is what actually OOMs. Phase 6 passes precision
-    explicitly rather than trusting it.
+Five instances of one pattern — **two experiments sharing a directory get
+silently averaged** — plus three others:
 
-### Wrong turns, so you do not repeat them
+16. **gate4 counted Phase 6's sweep as extra RoPE samples.** attn_weighted
+    moved 0.770 → 0.700 and p 1.000 → 0.264 on a 100-vs-370 comparison, with
+    nothing re-run. `freeze_rope_mode.py` had it too. Fixed with a scoring-knob
+    guard and a `run_key` guard sharing one resolver.
+17. **gate6 could never have passed** — it required `full` at budget=1.0 while
+    runs recorded whatever `--budget` was passed.
+18. **`precision` was missing from `run_key`**, so 4-bit records would have
+    marked bf16 tasks done and reported a grid never measured.
+19. **Two gate6 tests and one gate5 test rotted** when grids narrowed — each
+    hardcoded a context the gate no longer inspects. They now read the
+    constant.
+20. **The figures averaged NIAH with LongBench.** Exact-match 0/1 blended with
+    F1/ROUGE: the budget=0.3 snapkv bar mixed 9 NIAH records at 1.000 with 100
+    LongBench at 0.249 and plotted 0.311, contradicting gate5. Figures now
+    split by task, and the ablation skips budgets missing conditions.
+21. **`choose_precision()` under-estimates**, confirmed a fourth time: it sizes
+    weights + KV + 2.5 GB and never models the attention activation.
 
-I was wrong three times about why 3B sessions stall, and each wrong theory
-cost a cycle. Recorded so the next person starts from the evidence:
-
-- **"expandable_segments causes it."** Removed it; attempt C hung anyway.
-- **"4-bit bitsandbytes causes it."** Attempt E ran bf16 and hung identically,
-  at 8.36 GiB of 14.56 — no memory pressure. Precision is not the variable.
-- **"a specific poisoned task causes it."** Cycles 3–6 all stopped at the same
-  record, which looked deterministic; cycle 6 skipped that chunk entirely and
-  still banked zero. The identical stopping point was just the resume marker
-  standing still while nothing ran.
-
-What is actually established: it is specific to **qwen2.5-3b** on this harness
-(Phases 4 and 5 ran 300 and 500 tasks at 1.5B without one stall), independent
-of precision, method, context and memory, and unkillable from inside. **There
-is no root cause yet.** Read the kernel log before theorising — Kaggle
-truncates it after a few hundred seconds, so a stall never appears in it, and
-the only reliable evidence is cancelling the session and reading the salvaged
-`.jsonl`.
+The lesson worth carrying: **a gate passing is not evidence the figure is
+right, and a figure rendering is not evidence the number is right.** Every one
+of these was found by comparing two views of the same data and noticing they
+disagreed.
 
 ---
-
 
 ## BACKGROUND — the 2026-09-18 session, still accurate for Phases 1-5
 
@@ -602,13 +593,13 @@ freeze a mode without a passing `gate4`/`freeze_rope_mode.py` run at p < 0.05.
 
 | Phase | Command | Gate | Status |
 |---|---|---|---|
-| 1 | `make phase1 phase1-4bit` | `make gate1` | **PASS** (real GPU, 1.000 acc both bf16 and 4-bit) |
-| 2 | `make phase2` | `make gate2` | **PASS** (real GPU, expected StreamingLLM/SnapKV split) |
-| 3 | `make phase3` | `make gate3` | **PASS** (real GPU, conservation + budget hold, centroids verified) |
-| 4 | `make phase4-scan` then `make phase4` → `make freeze-rope` | `make gate4` | **IN PROGRESS** — see live handoff above |
-| 5 | `make phase5 phase5-longbench` | `make gate5` | not started — LongBench half is the priority, see strategic note above |
-| 6 | `make phase6-sweep phase6-3b` | `make gate6` | not started (MODEL3B is now qwen2.5-3b) |
-| 7 | `make phase7` | `make gate7` | not started |
+| 1 | `make phase1 phase1-4bit` | `make gate1` | **PASS** |
+| 2 | `make phase2` | `make gate2` | **PASS** |
+| 3 | `make phase3` | `make gate3` | **PASS** |
+| 4 | `make phase4` → `make freeze-rope` | `make gate4` | **exit 2** — modes not distinguishable, p=1.000; attn_weighted frozen on principled grounds |
+| 5 | `make phase5 phase5-longbench` | `make gate5` | **exit 2 — FLAG** — grid complete (180+45 NIAH @ 0.2, 500 LongBench, 0 errors); SR-KV below both ablations |
+| 6 | `make phase6-sweep phase6-3b` | `make gate6` | **PASS** — 270/270, 0 errors |
+| 7 | `make phase7` | `make gate7` | **PASS** — 14 figures |
 
 Every gate exits `0` = proceed, `1` = failed or incomplete, `2` = needs a
 human look. **A gate returning 2 is not a bug to hide** — for gate 5 it means

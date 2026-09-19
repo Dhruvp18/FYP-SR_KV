@@ -103,36 +103,58 @@ def _save(fig, path: Path) -> Path:
     return path
 
 
+#: NIAH accuracy is exact-match (0/1); LongBench is F1/ROUGE. Averaging them
+#: produces a number describing neither, and it is not a small effect: at
+#: budget=0.3 the snapkv_unified bar mixed 9 NIAH records at 1.000 with 100
+#: LongBench records at 0.249 and plotted 0.311, contradicting the gate, which
+#: reports 1.000 because check_ablation filters on context_len. Same
+#: cross-experiment blending as the Phase 4 gate and the precision key; figures
+#: get the same guard, and split by task instead of hiding one.
+TASKS = (("niah", "NIAH"), ("longbench", "LongBench"))
+
+
+def _task_of(record) -> str:
+    return "niah" if record.get("context_len") is not None else "longbench"
+
+
+def split_by_task(records, task: str):
+    return [r for r in records if _task_of(r) == task]
+
+
 # ---------------------------------------------------------------------------
 # (a) memory vs accuracy Pareto
 # ---------------------------------------------------------------------------
 def plot_pareto(records, figures_dir: Path) -> list[Path]:
-    """Accuracy against KV cache size, one panel per model."""
+    """Accuracy against KV cache size, one panel per (model, task)."""
     written = []
-    by_model = _group(records, "model")
-    for (model,), rows in sorted(by_model.items(), key=lambda kv: str(kv[0])):
-        fig, ax = plt.subplots(figsize=(7, 5))
-        for (method,), method_rows in sorted(_group(rows, "method").items()):
-            label, colour, marker = style(method)
-            points = []
-            for (budget,), budget_rows in sorted(_group(method_rows, "budget").items()):
-                cached = _mean(r["cache_stats"]["n_tokens_cached"] for r in budget_rows)
-                prompt = _mean(r["prompt_tokens"] for r in budget_rows)
-                points.append((100.0 * cached / max(prompt, 1), _mean(r["accuracy"] for r in budget_rows)))
-            if not points:
-                continue
-            points.sort()
-            xs, ys = zip(*points)
-            ax.plot(xs, ys, marker=marker, color=colour, label=label,
-                    linewidth=1.6, markersize=8 if marker != "*" else 12)
+    for task, task_label in TASKS:
+        task_records = split_by_task(records, task)
+        if not task_records:
+            continue
+        by_model = _group(task_records, "model")
+        for (model,), rows in sorted(by_model.items(), key=lambda kv: str(kv[0])):
+            fig, ax = plt.subplots(figsize=(7, 5))
+            for (method,), method_rows in sorted(_group(rows, "method").items()):
+                label, colour, marker = style(method)
+                points = []
+                for (budget,), budget_rows in sorted(_group(method_rows, "budget").items()):
+                    cached = _mean(r["cache_stats"]["n_tokens_cached"] for r in budget_rows)
+                    prompt = _mean(r["prompt_tokens"] for r in budget_rows)
+                    points.append((100.0 * cached / max(prompt, 1), _mean(r["accuracy"] for r in budget_rows)))
+                if not points:
+                    continue
+                points.sort()
+                xs, ys = zip(*points)
+                ax.plot(xs, ys, marker=marker, color=colour, label=label,
+                        linewidth=1.6, markersize=8 if marker != "*" else 12)
 
-        ax.set_xlabel("KV cache retained (% of prompt tokens)")
-        ax.set_ylabel("Accuracy")
-        ax.set_title(f"Memory / accuracy trade-off - {model}")
-        ax.grid(alpha=0.3)
-        ax.set_ylim(-0.02, 1.02)
-        ax.legend(fontsize=8, loc="lower right")
-        written.append(_save(fig, figures_dir / f"pareto_{model}.png"))
+            ax.set_xlabel("KV cache retained (% of prompt tokens)")
+            ax.set_ylabel("Accuracy (exact match)" if task == "niah" else "Score (F1 / ROUGE)")
+            ax.set_title(f"Memory / accuracy trade-off - {model} - {task_label}")
+            ax.grid(alpha=0.3)
+            ax.set_ylim(-0.02, 1.02)
+            ax.legend(fontsize=8, loc="lower right")
+            written.append(_save(fig, figures_dir / f"pareto_{model}_{task}.png"))
     return written
 
 
@@ -187,8 +209,23 @@ def plot_ablation(records, figures_dir: Path) -> list[Path]:
     """The four-condition matrix, so each ingredient's contribution is visible."""
     order = ["streaming_llm", "snapkv_unified", "centroid_merge", "sr_kv"]
     written = []
-    for (model,), rows in sorted(_group(records, "model").items(), key=lambda kv: str(kv[0])):
-        budgets = sorted({r["budget"] for r in rows if r["method"] in order})
+    pairs = [
+        (model, task, task_label, rows)
+        for task, task_label in TASKS
+        for (model,), rows in sorted(_group(split_by_task(records, task), "model").items(),
+                                     key=lambda kv: str(kv[0]))
+    ]
+    for model, task, task_label, rows in pairs:
+        # Only budgets where all four conditions exist. A budget with one
+        # condition present is not an ablation - budget=0.1 here is Phase 4's
+        # diagnostic floor probe, sr_kv alone, and plotting it as a bar next to
+        # three empty slots invites reading a single diagnostic point as a
+        # comparison.
+        present = {}
+        for r in rows:
+            if r["method"] in order:
+                present.setdefault(r["budget"], set()).add(r["method"])
+        budgets = sorted(b for b, methods in present.items() if len(methods) == len(order))
         if not budgets:
             continue
         fig, ax = plt.subplots(figsize=(1.6 * len(budgets) + 4, 4.5))
@@ -211,11 +248,11 @@ def plot_ablation(records, figures_dir: Path) -> list[Path]:
                        label="Uncompressed")
         ax.set_xticks(x + width * (len(order) - 1) / 2)
         ax.set_xticklabels([f"budget {b}" for b in budgets])
-        ax.set_ylabel("Accuracy")
-        ax.set_title(f"Ablation: recency and clustering contributions - {model}")
+        ax.set_ylabel("Accuracy (exact match)" if task == "niah" else "Score (F1 / ROUGE)")
+        ax.set_title(f"Ablation: recency and clustering contributions - {model} - {task_label}")
         ax.grid(axis="y", alpha=0.3)
         ax.legend(fontsize=8)
-        written.append(_save(fig, figures_dir / f"ablation_{model}.png"))
+        written.append(_save(fig, figures_dir / f"ablation_{model}_{task}.png"))
     return written
 
 

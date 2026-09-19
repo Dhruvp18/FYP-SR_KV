@@ -224,3 +224,70 @@ def test_load_records_ignores_subdirectories(tmp_path):
     records = load_records(tmp_path)
     assert len(records) == 1
     assert records[0]["accuracy"] == 1.0, "a file outside results/ leaked into the aggregate"
+
+
+def test_figures_never_average_niah_and_longbench_together(tmp_path):
+    """NIAH is exact-match 0/1; LongBench is F1/ROUGE. One bar cannot be both.
+
+    Measured on real data: the budget=0.3 snapkv_unified ablation bar averaged
+    9 NIAH records at 1.000 with 100 LongBench records at 0.249 and plotted
+    0.311 - contradicting gate 5, which reports 1.000 because check_ablation
+    filters on context_len. make_plots never got that guard. Same
+    cross-experiment blending as the Phase 4 gate and the precision run_key.
+    """
+    from scripts.make_plots import plot_ablation, plot_pareto
+
+    def niah(method, acc, ctx=2048, depth=0, sample=0):
+        return {"model": "m", "method": method, "budget": 0.3, "accuracy": acc,
+                "context_len": ctx, "depth": depth, "sample_idx": sample,
+                "prompt_tokens": 2048, "cache_stats": {"n_tokens_cached": 600}}
+
+    def lb(method, acc, task="gov_report", sample=0):
+        return {"model": "m", "method": method, "budget": 0.3, "accuracy": acc,
+                "lb_task": task, "sample_idx": sample,
+                "prompt_tokens": 4096, "cache_stats": {"n_tokens_cached": 1200}}
+
+    records = []
+    for method in ("streaming_llm", "snapkv_unified", "centroid_merge", "sr_kv"):
+        records += [niah(method, 1.0, depth=d) for d in (0, 25, 50)]
+        records += [lb(method, 0.25, sample=i) for i in range(3)]
+    records += [niah("full", 1.0), lb("full", 0.25)]
+
+    written = plot_ablation(records, tmp_path) + plot_pareto(records, tmp_path)
+    names = [p.name for p in written]
+
+    # one figure per (model, task), never a merged one
+    assert any("niah" in n for n in names), names
+    assert any("longbench" in n for n in names), names
+    assert all(("niah" in n) or ("longbench" in n) for n in names), names
+
+
+def test_ablation_skips_budgets_missing_conditions(tmp_path):
+    """A budget with one condition present is a diagnostic point, not an ablation.
+
+    budget=0.1 in the real results is Phase 4's floor probe - sr_kv alone.
+    Drawing it beside three empty slots invites reading one diagnostic run as
+    a four-way comparison.
+    """
+    from scripts.make_plots import plot_ablation
+
+    def rec(method, budget, acc, depth=0):
+        return {"model": "m", "method": method, "budget": budget, "accuracy": acc,
+                "context_len": 2048, "depth": depth, "sample_idx": 0,
+                "prompt_tokens": 2048, "cache_stats": {"n_tokens_cached": 600}}
+
+    records = [rec("sr_kv", 0.1, 0.27)]  # lone diagnostic budget
+    for method in ("streaming_llm", "snapkv_unified", "centroid_merge", "sr_kv"):
+        records.append(rec(method, 0.2, 1.0))
+
+    written = plot_ablation(records, tmp_path)
+    assert written, "the complete budget should still plot"
+
+    import scripts.make_plots as mp
+    rows = [r for r in records if r["method"] in
+            ("streaming_llm", "snapkv_unified", "centroid_merge", "sr_kv")]
+    present = {}
+    for r in rows:
+        present.setdefault(r["budget"], set()).add(r["method"])
+    plotted = sorted(b for b, m in present.items() if len(m) == 4)
+    assert plotted == [0.2], f"only complete budgets belong on an ablation: {plotted}"
