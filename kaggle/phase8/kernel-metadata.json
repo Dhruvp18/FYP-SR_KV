@@ -1,0 +1,15 @@
+{
+  "id": "dhruvp18/sr-kv-phase8",
+  "title": "sr-kv-phase8",
+  "code_file": "sr-kv-phase8.ipynb",
+  "language": "python",
+  "kernel_type": "notebook",
+  "is_private": true,
+  "enable_gpu": true,
+  "enable_internet": true,
+  "dataset_sources": [],
+  "competition_sources": [],
+  "kernel_sources": [
+    "dhruvp18/sr-kv-phase7"
+  ]
+}
