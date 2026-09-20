@@ -66,7 +66,11 @@ def test_both_forward_passes_get_a_mask_spanning_the_cache(tiny):
     original = model.forward
 
     def spy(*args, **kwargs):
-        seen.append(kwargs.get("attention_mask"))
+        # The cache length has to be read *here*, not after measure() returns:
+        # the scoring pass appends its own tokens and then recompresses, so by
+        # the time measure() is done get_seq_length() no longer describes what
+        # the mask had to cover.
+        seen.append((kwargs.get("attention_mask"), cache.get_seq_length()))
         return original(*args, **kwargs)
 
     model.forward = spy
@@ -76,15 +80,17 @@ def test_both_forward_passes_get_a_mask_spanning_the_cache(tiny):
         model.forward = original
 
     assert len(seen) == 2, f"expected a prefill and a scoring pass, saw {len(seen)}"
-    prefill, scoring = seen
+    (prefill, prefill_cached), (scoring, scoring_cached) = seen
+
     assert prefill is not None, "prefill ran with no attention mask"
+    assert prefill_cached == 0, "the prefill should start from an empty cache"
     assert prefill.shape[-1] == len(sample.prefix_ids)
 
     assert scoring is not None, "the scoring pass ran with no attention mask"
-    # it must cover the compressed cache plus the new tokens, not just the new
-    # tokens and not the pre-compression length
-    cached = cache.get_seq_length() - len(sample.continuation_ids)
-    assert scoring.shape[-1] == cached + len(sample.continuation_ids)
+    # it must cover the compressed cache as it stood at that moment, plus the
+    # new tokens - not just the new tokens, and not the pre-compression length
+    assert scoring.shape[-1] == scoring_cached + len(sample.continuation_ids)
+    assert scoring_cached < len(sample.prefix_ids), "nothing was compressed"
     assert scoring.shape[-1] > len(sample.continuation_ids), (
         "mask covers only the continuation - the cache is invisible"
     )
