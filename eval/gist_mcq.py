@@ -340,10 +340,38 @@ def measure(model, tokenizer, sample: GistSample, cache, *,
                   attention_mask=torch.ones_like(passage_ids))
             mask = torch.ones((1, cache.get_seq_length() + question_ids.shape[1]),
                                dtype=torch.long, device=device)
+            # `generate()` starting fresh against an already-populated cache -
+            # unlike every other generation path in this repo, which starts
+            # `generate()` from an empty cache and lets it compress internally
+            # over one continuous call - has to be told where the new tokens
+            # truly sit. Left to infer it (`modeling_qwen2.py`, Qwen2Model.
+            # forward: "if position_ids is None: position_ids = arange(seq_len)
+            # + past_key_values.get_seq_length()"), HF derives the new tokens'
+            # RoPE position from `get_seq_length()`, which is the compressed
+            # SLOT count (e.g. 822 at budget=0.1 on an 8192-token passage), not
+            # the true count of tokens actually seen (~8192). That 7000+
+            # position error corrupts every subsequent attention computation:
+            # confirmed on real hardware, this is what turned every compressed
+            # method's output to repetitive garbage ("spam spam spam...")
+            # while the uncompressed `full` arm - where slot count and true
+            # count are identical - answered correctly. `cache.t_now` is the
+            # true position of the last token `update()` actually stored
+            # (CLAUDE.md A5 / src/caches/base.py), so the question's first
+            # token continues from `t_now + 1`. (Not `cache_position`: that
+            # argument was removed from the model's forward signature in this
+            # transformers version and `generate()` rejects it outright -
+            # `position_ids` is the one HF still derives from `get_seq_length()`
+            # and the one whose explicit value generate()'s decode loop
+            # continues to increment correctly for every later new token.)
+            start_pos = int(cache.t_now) + 1
+            position_ids = torch.arange(
+                start_pos, start_pos + question_ids.shape[1], device=device
+            ).unsqueeze(0)
             output = model.generate(
                 question_ids,
                 attention_mask=mask,
                 past_key_values=cache,
+                position_ids=position_ids,
                 use_cache=True,
                 max_new_tokens=max_new_tokens,
                 do_sample=False,

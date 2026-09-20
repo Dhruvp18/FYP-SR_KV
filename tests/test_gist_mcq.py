@@ -109,3 +109,68 @@ def test_score_does_not_match_a_letter_embedded_in_a_word():
     sample = G.GistSample(context_len=512, variant="attribution", sample_idx=0,
                            options=["Red", "Blue", "Green", "Yellow"], answer_letter="B")
     assert G.score(sample, "It was a Cab, definitely.") == 0.0
+
+
+# ---------------------------------------------------------------------------
+# two-pass generation: position correctness
+# ---------------------------------------------------------------------------
+def test_question_position_ids_reflect_true_token_count_not_compressed_slots():
+    """Regression test for the bug that turned every compressed method's
+    output into repetitive garbage ("spam spam spam...") on real hardware,
+    while the uncompressed `full` arm - unaffected because its slot count and
+    true token count are identical - answered correctly.
+
+    `measure()` calls `model.generate()` fresh against an already-compressed
+    cache, a code path nothing else in this repo exercises (every other
+    generation task starts `generate()` from an empty cache and lets it
+    compress internally over one continuous call). Left to its own default,
+    `Qwen2Model.forward` derives a new token's position_ids from
+    `past_key_values.get_seq_length()` - confirmed by reading
+    modeling_qwen2.py directly - which is the compressed SLOT count, not the
+    true count of tokens the passage actually contained. This spies on the
+    real position_ids the model receives rather than trusting the return
+    value, the same discipline test_perplexity_task.py uses for the mask bug.
+    """
+    from src.caches import make_cache
+    from src.models import build_tiny_model
+
+    model = build_tiny_model()
+    tokenizer = build_tiny_tokenizer()
+    sample = G.build_samples(tokenizer, context_lengths=[400], variants=["attribution"],
+                              n_samples=1, corpus="synthetic")[0]
+    cache = make_cache("snapkv_unified", model=model, budget=0.3, obs_window=8)
+
+    seen: list = []
+    original = model.forward
+
+    def spy(*args, **kwargs):
+        pid = kwargs.get("position_ids")
+        if pid is not None:
+            seen.append(pid.clone())
+        return original(*args, **kwargs)
+
+    model.forward = spy
+    try:
+        G.measure(model, tokenizer, sample, cache, max_new_tokens=4)
+    finally:
+        model.forward = original
+
+    assert len(seen) >= 2, "expected the question prefill plus at least one decode step"
+
+    # the passage must actually have compressed, or this test proves nothing
+    assert cache.get_stats()["n_tokens_evicted"] > 0
+
+    question_start = int(seen[0][0, 0].item())
+    assert question_start > cache.get_seq_length(), (
+        f"question position_ids started at {question_start}, at or below the "
+        f"compressed slot count ({cache.get_seq_length()}) - it fell back to "
+        "get_seq_length() instead of the true token count"
+    )
+
+    # positions must be contiguous across the whole generate() call: each
+    # later forward's first position is exactly one past the previous
+    # forward's last position
+    for prev, cur in zip(seen, seen[1:]):
+        assert int(cur[0, 0].item()) == int(prev[0, -1].item()) + 1, (
+            "position_ids are not contiguous across decode steps"
+        )
