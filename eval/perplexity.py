@@ -135,8 +135,27 @@ def measure(model, sample: PerplexitySample, cache, *, device=None) -> dict:
             (1, cache.get_seq_length() + continuation.shape[1]),
             dtype=torch.long, device=device,
         )
+        # This second call is a fresh, standalone forward against a cache
+        # that already compressed during the first call - not a step inside
+        # one continuous generate() loop, which tracks position internally
+        # and never hits this. Left to its own default (position_ids=None),
+        # Qwen2Model.forward computes `arange(seq_len) + past_key_values.
+        # get_seq_length()` - the compressed SLOT count (e.g. ~2458 at
+        # budget=0.3 on an 8192-token prefix), not the true prefix length
+        # (8192) the continuation actually starts after. That is a 5000+
+        # position error on every compressed method's score, silently, since
+        # cross-entropy degrades smoothly rather than crashing - confirmed by
+        # spying on the real position_ids the model received: none were ever
+        # passed explicitly, so this ran on the wrong value in every prior
+        # measurement, including whatever E1 numbers existed before this fix.
+        # `cache.t_now` is the true position of the last token `update()`
+        # actually stored (CLAUDE.md A5 / src/caches/base.py).
+        start_pos = int(cache.t_now) + 1
+        position_ids = torch.arange(
+            start_pos, start_pos + continuation.shape[1], device=device
+        ).unsqueeze(0)
         out = model(continuation, past_key_values=cache, use_cache=True,
-                    attention_mask=mask)
+                    attention_mask=mask, position_ids=position_ids)
         logits = torch.cat([first_logits, out.logits[:, :-1, :]], dim=1).float()
 
     loss = torch.nn.functional.cross_entropy(

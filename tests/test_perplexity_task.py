@@ -105,6 +105,53 @@ def test_uncompressed_and_compressed_differ(tiny):
     assert full["nll"] != comp["nll"], "compressed cache gave identical loss to uncompressed"
 
 
+def test_continuation_position_ids_reflect_true_prefix_length(tiny):
+    """Regression test for a second, independent position bug found after the
+    mask-registration fix (see git history / HANDOFF.md).
+
+    The second forward call scores the continuation against a cache that
+    already compressed during the first call - a fresh, standalone call, not
+    a step inside one continuous generate() loop (which tracks position
+    internally and never hits this). Left to its own default
+    (position_ids=None), Qwen2Model.forward computes `arange(seq_len) +
+    past_key_values.get_seq_length()` - the compressed SLOT count, not the
+    true prefix length the continuation actually starts after. Confirmed by
+    spying on the real position_ids the model receives, not by trusting the
+    loss value: on real weights this was silently inflating every compressed
+    method's perplexity by corrupting the continuation's RoPE position, and
+    cross-entropy degrades smoothly rather than crashing, so nothing about
+    the return value alone would have caught it.
+    """
+    model, tok = tiny
+    sample = P.build_samples(tok, context_lengths=[384], n_samples=1, continuation_tokens=32)[0]
+    cache = make_cache("snapkv_unified", model=model, budget=0.3, obs_window=8)
+
+    seen = []
+    original = model.forward
+
+    def spy(*args, **kwargs):
+        pid = kwargs.get("position_ids")
+        if pid is not None:
+            seen.append(pid.clone())
+        return original(*args, **kwargs)
+
+    model.forward = spy
+    try:
+        P.measure(model, sample, cache)
+    finally:
+        model.forward = original
+
+    assert len(seen) == 1, "expected exactly one explicit position_ids call (the continuation pass)"
+    assert cache.get_stats()["n_tokens_evicted"] > 0, "prefix never compressed - this test proves nothing"
+
+    continuation_start = int(seen[0][0, 0].item())
+    assert continuation_start == len(sample.prefix_ids), (
+        f"continuation position_ids started at {continuation_start}, not the true prefix "
+        f"length ({len(sample.prefix_ids)}) - it fell back to get_seq_length() "
+        f"({cache.get_seq_length()}) instead"
+    )
+
+
 def test_windows_do_not_overlap(tiny):
     """Overlapping windows would make the paired bootstrap invalid."""
     _, tok = tiny
