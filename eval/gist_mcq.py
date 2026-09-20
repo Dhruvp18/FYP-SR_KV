@@ -38,9 +38,14 @@ from __future__ import annotations
 
 import random
 import re
+import time
 from dataclasses import dataclass, field
 
+import torch
+
+from eval.memory import peak_memory
 from eval.niah import _haystack_ids
+from src.attn_patch import attach_cache
 
 LETTERS = "ABCD"
 VARIANTS = ("attribution", "aggregation")
@@ -275,3 +280,97 @@ def score(sample: GistSample, generated_text: str) -> float:
         if match:
             return 1.0 if match.group(1) == sample.answer_letter else 0.0
     return 0.0
+
+
+def _two_pass_texts(tokenizer, context: str, question: str) -> tuple[str, str]:
+    """Split what `eval.memory.build_prompt` would produce into (passage,
+    question) halves at the exact same boundary, so feeding them as two
+    forward passes reproduces the same prompt a single-pass call would - but
+    lets the passage's cache compress before the question exists to compress
+    around (see `measure`'s docstring for why that distinction is the whole
+    point of this task)."""
+    if getattr(tokenizer, "chat_template", None):
+        user = f"{context}\n\n{question}"
+        wrapped = tokenizer.apply_chat_template(
+            [{"role": "user", "content": user}], tokenize=False, add_generation_prompt=True
+        )
+        idx = wrapped.index(context) + len(context)
+        return wrapped[:idx], wrapped[idx:]
+    return context, "\n\n" + question
+
+
+@torch.no_grad()
+def measure(model, tokenizer, sample: GistSample, cache, *,
+            max_new_tokens: int | None = None, device=None) -> dict:
+    """Two forward passes, the same discipline `perplexity.measure` uses.
+
+    A single combined (passage + question) forward - what `eval.memory.
+    generate_and_measure` does for every other generation task - lets the
+    compression step's observation window BE the question, since it is
+    always the last thing in the prompt. Windowed-attention scoring can then
+    "look ahead": it directly attends back to whatever the question names,
+    regardless of how many times that content was mentioned or how it was
+    evicted elsewhere, and every method (hard eviction included) recovers it
+    trivially. This is not hypothetical - it is the same mechanism that
+    saturates NIAH, and it was confirmed here on real hardware: two GPU smoke
+    tests at full target scale (ctx=8192, budget=0.1, real prose) both came
+    back at 1.000 accuracy for every method, including snapkv_unified, with a
+    single-pass prompt.
+
+    Splitting into two passes makes the passage's compression irreversible
+    before the question exists: whatever a policy evicts (or merges) using
+    only passage-internal signal is gone (or blurred) by the time the
+    question is asked, and a policy cannot un-evict what it no longer holds.
+    That is the property this experiment is actually meant to test.
+    """
+    device = device or next(model.parameters()).device
+    max_new_tokens = max_new_tokens if max_new_tokens is not None else sample.max_new_tokens
+    passage_text, question_text = _two_pass_texts(tokenizer, sample.context, sample.question)
+
+    passage_ids = tokenizer(passage_text, return_tensors="pt",
+                             add_special_tokens=False)["input_ids"].to(device)
+    question_ids = tokenizer(question_text, return_tensors="pt",
+                              add_special_tokens=False)["input_ids"].to(device)
+    prompt_tokens = int(passage_ids.shape[1] + question_ids.shape[1])
+
+    with peak_memory() as mem:
+        started = time.perf_counter()
+        with attach_cache(model, cache):
+            model(passage_ids, past_key_values=cache, use_cache=True,
+                  attention_mask=torch.ones_like(passage_ids))
+            mask = torch.ones((1, cache.get_seq_length() + question_ids.shape[1]),
+                               dtype=torch.long, device=device)
+            output = model.generate(
+                question_ids,
+                attention_mask=mask,
+                past_key_values=cache,
+                use_cache=True,
+                max_new_tokens=max_new_tokens,
+                do_sample=False,
+                temperature=None,
+                top_p=None,
+                top_k=None,
+                pad_token_id=tokenizer.pad_token_id or tokenizer.eos_token_id,
+            )
+        elapsed = time.perf_counter() - started
+
+    generated_ids = output[0, question_ids.shape[1]:]
+    n_new = int(generated_ids.shape[0])
+    text = tokenizer.decode(generated_ids, skip_special_tokens=True)
+
+    stats = cache.get_stats()
+    history = list(getattr(cache, "budget_history", []))
+    return {
+        "generated_text": text,
+        "prompt_tokens": prompt_tokens,
+        "generated_tokens": n_new,
+        "seconds": elapsed,
+        "tokens_per_sec": (n_new / elapsed) if elapsed > 0 else 0.0,
+        "max_memory_allocated": mem["max_memory_allocated"],
+        "memory_allocated_delta": mem["memory_allocated_delta"],
+        "cache_stats": stats,
+        "budget_used_pct_max": max(history) if history else 100.0,
+        "budget_used_pct_final": history[-1] if history else 100.0,
+        "conservation_ok": bool(cache.check_conservation()),
+        "cache_config": cache.config_dict(),
+    }

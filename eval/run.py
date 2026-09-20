@@ -390,6 +390,9 @@ def main(argv=None) -> int:
         try:
             if args.task == "perplexity":
                 result = perplexity.measure(model, sample, cache)
+            elif args.task == "gist_mcq":
+                max_new = getattr(sample, "max_new_tokens", args.max_new_tokens)
+                result = gist_mcq.measure(model, tokenizer, sample, cache, max_new_tokens=max_new)
             else:
                 max_new = getattr(sample, "max_new_tokens", args.max_new_tokens)
                 prompt = build_prompt(tokenizer, sample.context, sample.question)
