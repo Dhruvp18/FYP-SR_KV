@@ -73,6 +73,35 @@ def test_run_produces_the_expected_result_schema(tmp_path):
     assert payload["metadata"]["args"]["task"] == "niah"
 
 
+def test_gist_mcq_runs_end_to_end_through_the_harness(tmp_path):
+    """Phase 8 / H3: exercises the run.py wiring, not just eval/gist_mcq.py in
+    isolation - build_task_list, the samples/score_fn dispatch, and the record
+    schema all have a --task branch specific to gist_mcq that a unit test on
+    the module alone would never touch."""
+    output = tmp_path / "gist.json"
+    cmd = [
+        "--tiny", "--allow_cpu",
+        "--method", "full,snapkv,sr_kv",
+        "--task", "gist_mcq",
+        "--context_len", "512",
+        "--gist_variants", "attribution,aggregation",
+        "--n_samples", "2",
+        "--max_new_tokens", "4",
+        "--obs_window", "8",
+        "--n_centroids", "4",
+        "--output", str(output),
+    ]
+    assert main(cmd) == 0
+
+    payload = json.loads(output.read_text(encoding="utf-8"))
+    assert payload["n_records"] == 12  # 3 methods x 2 variants x 2 samples
+    variants = {r["variant"] for r in payload["records"]}
+    assert variants == {"attribution", "aggregation"}
+    for record in payload["records"]:
+        assert record["accuracy"] in (0.0, 1.0)  # random tiny model, but always scoreable
+        assert "cache_stats" in record
+
+
 def test_noop_cache_reports_zero_evictions_through_the_harness(tmp_path):
     output = tmp_path / "noop.json"
     assert main(_base_cmd(output, method="full")) == 0

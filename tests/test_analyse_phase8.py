@@ -185,3 +185,67 @@ def test_h2_pairs_within_a_longbench_task_not_across_them(results_dir, capsys):
     for setting in ("narrativeqa b=0.05", "gov_report b=0.1"):
         assert setting in out
     assert _verdict(out, "H2 (tight budgets)") == "SUPPORTED"
+
+
+def _gist_rows(*, effect, variant, n=50, budgets=(0.1, 0.15), context=8192,
+               secondary_effect=0.0):
+    """gist_mcq rows where centroid_merge beats snapkv_unified by `effect` accuracy.
+
+    Higher accuracy is better here (unlike perplexity's nll), so a positive
+    `effect` is a win for centroid_merge - the direction H3 predicts.
+    """
+    rows = []
+    for budget in budgets:
+        for i in range(n):
+            shared = (i % 17) * 0.01
+            for method, delta in (
+                ("snapkv_unified", 0.0),
+                ("centroid_merge", effect),
+                ("sr_kv", secondary_effect),
+                ("full", 0.3),
+            ):
+                rows.append({
+                    "task": "gist_mcq", "method": method, "model": "m",
+                    "context_len": context, "variant": variant,
+                    "budget": 1.0 if method == "full" else budget,
+                    "sample_idx": i,
+                    "accuracy": shared + delta,
+                })
+    return rows
+
+
+def test_gist_variants_get_independent_verdicts(results_dir, capsys):
+    """attribution and aggregation test different mechanisms and must not blend.
+
+    Same discipline as H2's per-lb_task pairing: an effect planted in one
+    variant must not leak into, or get diluted by, the other.
+    """
+    rows = (_gist_rows(effect=0.20, variant="attribution")
+            + _gist_rows(effect=0.0, variant="aggregation"))
+    _write(results_dir, "phase8_gist_m.jsonl", rows)
+    analyse_phase8.main([])
+    out = capsys.readouterr().out
+    assert _verdict(out, "H3a (attribution)") == "SUPPORTED"
+    assert _verdict(out, "H3b (aggregation)") == "NOT SUPPORTED"
+
+
+def test_gist_no_effect_in_either_variant_is_not_supported(results_dir, capsys):
+    rows = (_gist_rows(effect=0.0, variant="attribution")
+            + _gist_rows(effect=0.0, variant="aggregation"))
+    _write(results_dir, "phase8_gist_m.jsonl", rows)
+    analyse_phase8.main([])
+    out = capsys.readouterr().out
+    assert _verdict(out, "H3a (attribution)") == "NOT SUPPORTED"
+    assert _verdict(out, "H3b (aggregation)") == "NOT SUPPORTED"
+
+
+def test_gist_reference_arm_is_matched_on_context_not_budget(results_dir, capsys):
+    """Same bug class as H1/H2's `full` pairing: budget=1.0 shares no setting
+    key with a compressed arm's "ctx=N b=0.1", so the reference must be
+    matched on context alone or it silently prints "no baseline"."""
+    rows = _gist_rows(effect=0.0, variant="attribution")
+    _write(results_dir, "phase8_gist_m.jsonl", rows)
+    analyse_phase8.main([])
+    out = capsys.readouterr().out
+    assert "no full baseline" not in out
+    assert "cost of compression: snapkv_unified vs uncompressed full" in out

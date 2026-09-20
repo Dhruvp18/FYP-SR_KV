@@ -231,6 +231,25 @@ def main(argv=None) -> int:
     else:
         print("\n=== H2 - tight budgets === no data yet")
 
+    gist = load("phase8_gist_*.jsonl")
+    if gist:
+        gist_setting = lambda r: f"ctx={r['context_len']} b={r['budget']}"
+        for variant, tag, label_name in (
+            ("attribution", "H3a", "H3a - entity attribution (redundant mentions, MCQ-scored)"),
+            ("aggregation", "H3b", "H3b - topic aggregation (relative frequency, MCQ-scored)"),
+        ):
+            rows = [r for r in gist if r.get("variant") == variant]
+            if not rows:
+                continue
+            verdicts[f"{tag} ({variant})"] = compare(
+                rows, setting_key=gist_setting, value_key="accuracy",
+                lower_is_better=False, label=label_name,
+            )
+            secondary(rows, setting_key=gist_setting, value_key="accuracy",
+                      lower_is_better=False, ref_key=lambda r: f"ctx={r['context_len']}")
+    else:
+        print("\n=== H3 - gist recall (redundant, MCQ-scored) === no data yet")
+
     print("\n" + "=" * 62)
     for name, supported in verdicts.items():
         print(f"  {name:<24}{'SUPPORTED' if supported else 'NOT SUPPORTED'}")

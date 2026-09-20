@@ -33,7 +33,7 @@ if str(REPO_ROOT) not in sys.path:
 import src  # noqa: E402,F401  (environment guards, must precede transformers)
 import torch  # noqa: E402
 
-from eval import longbench, niah, perplexity  # noqa: E402
+from eval import gist_mcq, longbench, niah, perplexity  # noqa: E402
 from eval.memory import build_prompt, generate_and_measure  # noqa: E402
 from scripts.checkpoint_utils import (  # noqa: E402
     ResultStore,
@@ -56,7 +56,8 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--method", type=_csv(str), default=None,
                    help=f"comma-separated; one of {sorted(METHODS)} (or supply via --config)")
     p.add_argument("--model", default="qwen2.5-1.5b")
-    p.add_argument("--task", default="niah", choices=["niah", "longbench", "perplexity"])
+    p.add_argument("--task", default="niah",
+                   choices=["niah", "longbench", "perplexity", "gist_mcq"])
     p.add_argument("--context_len", type=_csv(int), default=[4096])
     p.add_argument("--budget", type=_csv(float), default=[0.3])
     p.add_argument("--output", default=None,
@@ -80,6 +81,7 @@ def build_parser() -> argparse.ArgumentParser:
                         "safety margin. Scaling is roughly linear (~1.5 GiB/1000 tokens), so "
                         "4096 leaves real headroom. 0 disables truncation.")
     p.add_argument("--max_new_tokens", type=int, default=32)
+    p.add_argument("--gist_variants", type=_csv(str), default=list(gist_mcq.VARIANTS))
 
     # policy hyperparameters (Phase 6 sweeps these)
     p.add_argument("--rope_position_mode", default=None,
@@ -116,7 +118,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 #: args whose CLI type is a comma-separated list, so a scalar in YAML must be wrapped
-_LIST_ARGS = {"method", "context_len", "budget", "depths", "longbench_tasks"}
+_LIST_ARGS = {"method", "context_len", "budget", "depths", "longbench_tasks", "gist_variants"}
 
 
 def apply_config_file(parser, argv, args):
@@ -205,6 +207,18 @@ def build_task_list(args) -> list[dict]:
                                 "depth": depth,
                                 "sample_idx": sample_idx,
                                 "task_id": f"niah/ctx{context_len}/depth{depth}/s{sample_idx}",
+                            })
+            elif args.task == "gist_mcq":
+                for variant in args.gist_variants:
+                    for context_len in args.context_len:
+                        for sample_idx in range(args.n_samples):
+                            tasks.append({
+                                "method": method,
+                                "budget": budget,
+                                "context_len": context_len,
+                                "variant": variant,
+                                "sample_idx": sample_idx,
+                                "task_id": f"gist/{variant}/ctx{context_len}/s{sample_idx}",
                             })
             else:
                 for lb_task in args.longbench_tasks:
@@ -324,6 +338,18 @@ def main(argv=None) -> int:
             )
         }
         score_fn = perplexity.score
+    elif args.task == "gist_mcq":
+        samples = {
+            s.task_id: s
+            for s in gist_mcq.build_samples(
+                tokenizer,
+                context_lengths=sorted({t["context_len"] for t in todo}),
+                variants=sorted({t["variant"] for t in todo}),
+                n_samples=args.n_samples,
+                seed=args.seed,
+            )
+        }
+        score_fn = gist_mcq.score
     else:
         samples = {
             s.task_id: s
@@ -437,11 +463,15 @@ def summarize(records: list[dict]) -> dict:
     for r in records:
         if "error" in r:
             continue
-        key = (r.get("method"), r.get("budget"), r.get("context_len") or r.get("lb_task"))
+        # `variant` distinguishes gist_mcq's attribution/aggregation cells that
+        # otherwise share (method, budget, context_len); it's absent (None) on
+        # every other task, so this changes nothing for niah/longbench/perplexity.
+        key = (r.get("method"), r.get("budget"), r.get("context_len") or r.get("lb_task"),
+               r.get("variant"))
         groups.setdefault(key, []).append(r)
 
     out = {}
-    for (method, budget, ctx), rows in sorted(groups.items(), key=lambda kv: str(kv[0])):
+    for (method, budget, ctx, variant), rows in sorted(groups.items(), key=lambda kv: str(kv[0])):
         n = len(rows)
         def mean(field):
             vals = [r[field] for r in rows if field in r]
@@ -469,7 +499,8 @@ def summarize(records: list[dict]) -> dict:
             value = mean(field)
             if value is not None:
                 summary[field] = value
-        out[f"{method}|budget={budget}|{ctx}"] = summary
+        label = f"{method}|budget={budget}|{ctx}" + (f"|{variant}" if variant else "")
+        out[label] = summary
     n_errors = sum(1 for r in records if "error" in r)
     if n_errors:
         out["_errors"] = n_errors

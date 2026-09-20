@@ -22,7 +22,7 @@ FIGURES ?= figures
 SHARD   ?= 0
 NSHARDS ?= 1
 
-.PHONY: help test configs phase8-perplexity phase8-tight-longbench phase8-analyse \
+.PHONY: help test configs phase8-perplexity phase8-tight-longbench phase8-gist phase8-analyse \
         phase1 phase1-4bit phase2 phase3 phase4 phase4-scan freeze-rope \
         phase5 phase5-longbench phase5-recompress-probe phase6-sweep phase6-3b-scan phase6-3b phase7 \
         gate1 gate2 gate3 gate4 gate5 gate6 gate7 \
@@ -47,6 +47,7 @@ help:
 	@echo "  make phase7            - regenerate every figure          -> make gate7"
 	@echo "  make phase8-perplexity - E1: does merging win on perplexity?"
 	@echo "  make phase8-tight-longbench - E2: does merging win at budget 0.05-0.15?"
+	@echo "  make phase8-gist       - E3: does merging win on redundant, MCQ-scored gist recall?"
 	@echo "  make phase8-analyse    - the pre-registered test (PREREGISTRATION.md)"
 	@echo ""
 	@echo "Each gateN exits non-zero if that phase's pass condition is not met."
@@ -357,6 +358,30 @@ phase8-tight-longbench:
 	    --shard $(SHARD) --num_shards $(NSHARDS) \
 	    --output $(RESULTS)/phase8_tight_longbench_$(MODEL).json || exit 1; \
 	done
+
+# E3 (H3): a task built specifically for the mechanism, rather than borrowed
+# from a suite designed for something else. See PREREGISTRATION.md addendum.
+# The fact needed is restated several times, scattered non-locally (genuine
+# redundancy for cosine-clustering to exploit, unlike a single needle or a
+# dense report), and scored by which MCQ letter comes out, not string overlap
+# (sidesteps H1's exact-token metric problem entirely). streaming_llm is
+# dropped here - it is not part of the core clustering comparison and this is
+# already a second speculative experiment, not a full phase.
+GIST_SAMPLES ?= 50
+GIST_CONTEXT ?= 8192
+GIST_BUDGETS ?= 0.1,0.15
+
+phase8-gist:
+	$(PY) eval/run.py --method snapkv_unified,centroid_merge,sr_kv \
+	  --model $(MODEL) --task gist_mcq \
+	  --context_len $(GIST_CONTEXT) --budget $(GIST_BUDGETS) \
+	  --n_samples $(GIST_SAMPLES) --precision bf16 \
+	  --output $(RESULTS)/phase8_gist_$(MODEL).json
+	$(PY) eval/run.py --method full \
+	  --model $(MODEL) --task gist_mcq \
+	  --context_len $(GIST_CONTEXT) --budget 1.0 \
+	  --n_samples $(GIST_SAMPLES) --precision bf16 \
+	  --output $(RESULTS)/phase8_gist_full_$(MODEL).json
 
 phase8-analyse:
 	$(PY) scripts/analyse_phase8.py
