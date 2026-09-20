@@ -29,8 +29,9 @@ Two variants probe two distinct claims about what a centroid preserves:
   almost-evicted tokens agreed", since a token either survives whole or is
   gone.
 
-Both variants reuse NIAH's synthetic filler generator (no network, byte-
-identical across restarts) but are otherwise independent of niah.py.
+Both variants reuse NIAH's haystack builder (`corpus="pg"` by default here -
+see `build_samples`'s docstring for why synthetic filler defeats the task)
+but are otherwise independent of niah.py.
 """
 
 from __future__ import annotations
@@ -39,7 +40,7 @@ import random
 import re
 from dataclasses import dataclass, field
 
-from eval.niah import _filler_text
+from eval.niah import _haystack_ids
 
 LETTERS = "ABCD"
 VARIANTS = ("attribution", "aggregation")
@@ -93,14 +94,6 @@ class GistSample:
     @property
     def task_id(self) -> str:
         return f"gist/{self.variant}/ctx{self.context_len}/s{self.sample_idx}"
-
-
-def _haystack_ids(tokenizer, rng: random.Random, min_tokens: int) -> list[int]:
-    """Same synthetic, no-network filler NIAH uses - deterministic across restarts."""
-    ids: list[int] = []
-    while len(ids) < min_tokens:
-        ids.extend(tokenizer(_filler_text(rng, 8000), add_special_tokens=False)["input_ids"])
-    return ids
 
 
 def _splice(body_ids: list[int], inserts: list[tuple[int, list[int]]]) -> list[int]:
@@ -213,9 +206,21 @@ def build_samples(
     context_lengths,
     variants=VARIANTS,
     n_samples: int = 50,
+    corpus: str = "pg",
     seed: int = 1234,
 ) -> list[GistSample]:
     """Materialise every (variant, context_len, sample) cell.
+
+    `corpus="pg"` (Paul Graham essays, real prose) is the default here, unlike
+    `niah.build_samples`'s `"synthetic"` default. A first GPU smoke test with
+    synthetic filler saturated at 1.000 for every method, including at
+    budget=0.15: the filler is short, repetitive, boilerplate sentences, so
+    ANY importance score (attention-based or not) trivially ranks a novel
+    fact sentence above it - the eviction policy never has to work for its
+    answer, defeating the point of the task. Real prose gives windowed-
+    attention scoring many equally "locally interesting" candidates to
+    compete with the planted facts for budget, which is what actually
+    exercises the difference between hard eviction and clustering.
 
     One shared rng, advanced in a fixed nested order, so resuming a run (or
     adding a method) reproduces byte-identical samples - the same discipline
@@ -227,7 +232,7 @@ def build_samples(
 
     rng = random.Random(seed)
     max_ctx = max(context_lengths)
-    hay_ids = _haystack_ids(tokenizer, rng, max_ctx + 512)
+    hay_ids = _haystack_ids(tokenizer, rng, corpus, max_ctx + 512)
 
     samples: list[GistSample] = []
     for variant in variants:

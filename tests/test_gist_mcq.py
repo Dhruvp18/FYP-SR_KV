@@ -20,12 +20,21 @@ def tok():
     return build_tiny_tokenizer()
 
 
+def _build(tok, **kwargs):
+    """`corpus="synthetic"` for every test here: these check structure
+    (splicing, MCQ shape, determinism), not task difficulty, so they should
+    stay offline and fast. `corpus="pg"` is the real-run default (see
+    `build_samples`'s docstring for why) and is exercised by the harness
+    integration test instead."""
+    return G.build_samples(tok, corpus="synthetic", **kwargs)
+
+
 # ---------------------------------------------------------------------------
 # sample construction
 # ---------------------------------------------------------------------------
 @pytest.mark.parametrize("variant", G.VARIANTS)
 def test_each_sample_has_one_valid_answer_among_distinct_options(tok, variant):
-    samples = G.build_samples(tok, context_lengths=[512], variants=[variant], n_samples=8)
+    samples = _build(tok, context_lengths=[512], variants=[variant], n_samples=8)
     assert len(samples) == 8
     for s in samples:
         assert len(s.options) == 4
@@ -40,26 +49,26 @@ def test_each_sample_has_one_valid_answer_among_distinct_options(tok, variant):
 def test_samples_are_reproducible_given_the_same_seed(tok):
     """Kaggle sessions get killed and restarted mid-sweep - the corpus and every
     fact placement must be byte-identical on a re-run, same as NIAH."""
-    a = G.build_samples(tok, context_lengths=[512], n_samples=4, seed=7)
-    b = G.build_samples(tok, context_lengths=[512], n_samples=4, seed=7)
+    a = _build(tok, context_lengths=[512], n_samples=4, seed=7)
+    b = _build(tok, context_lengths=[512], n_samples=4, seed=7)
     assert [s.context for s in a] == [s.context for s in b]
     assert [s.answer_letter for s in a] == [s.answer_letter for s in b]
 
 
 def test_different_seeds_do_not_collapse_to_the_same_answer_key(tok):
     """A fixed answer key (e.g. always 'A') would let a model guess for free."""
-    samples = G.build_samples(tok, context_lengths=[512], variants=["attribution"], n_samples=20)
+    samples = _build(tok, context_lengths=[512], variants=["attribution"], n_samples=20)
     letters = {s.answer_letter for s in samples}
     assert len(letters) > 1
 
 
 def test_unknown_variant_is_rejected(tok):
     with pytest.raises(ValueError):
-        G.build_samples(tok, context_lengths=[512], variants=["not_a_real_variant"])
+        _build(tok, context_lengths=[512], variants=["not_a_real_variant"])
 
 
 def test_task_ids_are_unique_and_carry_the_variant(tok):
-    samples = G.build_samples(tok, context_lengths=[512], variants=list(G.VARIANTS), n_samples=5)
+    samples = _build(tok, context_lengths=[512], variants=list(G.VARIANTS), n_samples=5)
     ids = [s.task_id for s in samples]
     assert len(set(ids)) == len(ids)
     assert all("/attribution/" in i or "/aggregation/" in i for i in ids)
@@ -69,7 +78,7 @@ def test_context_length_is_controlled_by_token_count_not_variant(tok):
     """Both variants insert a different number/length of fragments; the target
     context length must still be respected rather than drifting with them."""
     for variant in G.VARIANTS:
-        samples = G.build_samples(tok, context_lengths=[1024], variants=[variant], n_samples=3)
+        samples = _build(tok, context_lengths=[1024], variants=[variant], n_samples=3)
         for s in samples:
             n_tokens = len(tok(s.context, add_special_tokens=False)["input_ids"])
             # decode->re-encode can drift slightly at splice boundaries (same

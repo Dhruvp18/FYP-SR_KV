@@ -367,21 +367,38 @@ phase8-tight-longbench:
 # (sidesteps H1's exact-token metric problem entirely). streaming_llm is
 # dropped here - it is not part of the core clustering comparison and this is
 # already a second speculative experiment, not a full phase.
-GIST_SAMPLES ?= 50
-GIST_CONTEXT ?= 8192
-GIST_BUDGETS ?= 0.1,0.15
+#
+# --gist_corpus pg is not optional: a GPU smoke test with the default
+# synthetic filler saturated every method (including snapkv_unified) at
+# 1.000 accuracy even at budget=0.15, because the filler is repetitive
+# boilerplate that any importance score ranks below a novel fact sentence
+# regardless of eviction policy. Real prose gives windowed-attention scoring
+# genuine competition for the budget.
+GIST_SAMPLES  ?= 50
+GIST_CONTEXT  ?= 8192
+GIST_BUDGETS  ?= 0.1,0.15
+# Kaggle caps this account at 2 concurrent GPU sessions - overriding this to
+# a single variant lets H3a and H3b run as two separate kernels in parallel
+# instead of one kernel doing both variants serially.
+GIST_VARIANTS ?= attribution,aggregation
+# `pull` overwrites its target file rather than merging JSONL content, so two
+# concurrent kernels (e.g. one per variant, to use both of the account's GPU
+# slots) must not write the same filename - it would silently discard
+# whichever pulls first. GIST_TAG (e.g. "_attr", "_agg") keeps them distinct;
+# analyse_phase8.py's glob (phase8_gist_*.jsonl) picks up every tag.
+GIST_TAG ?=
 
 phase8-gist:
 	$(PY) eval/run.py --method snapkv_unified,centroid_merge,sr_kv \
-	  --model $(MODEL) --task gist_mcq \
+	  --model $(MODEL) --task gist_mcq --gist_corpus pg --gist_variants $(GIST_VARIANTS) \
 	  --context_len $(GIST_CONTEXT) --budget $(GIST_BUDGETS) \
 	  --n_samples $(GIST_SAMPLES) --precision bf16 \
-	  --output $(RESULTS)/phase8_gist_$(MODEL).json
+	  --output $(RESULTS)/phase8_gist$(GIST_TAG)_$(MODEL).json
 	$(PY) eval/run.py --method full \
-	  --model $(MODEL) --task gist_mcq \
+	  --model $(MODEL) --task gist_mcq --gist_corpus pg --gist_variants $(GIST_VARIANTS) \
 	  --context_len $(GIST_CONTEXT) --budget 1.0 \
 	  --n_samples $(GIST_SAMPLES) --precision bf16 \
-	  --output $(RESULTS)/phase8_gist_full_$(MODEL).json
+	  --output $(RESULTS)/phase8_gist$(GIST_TAG)_full_$(MODEL).json
 
 phase8-analyse:
 	$(PY) scripts/analyse_phase8.py

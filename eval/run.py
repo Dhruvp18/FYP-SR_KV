@@ -82,6 +82,10 @@ def build_parser() -> argparse.ArgumentParser:
                         "4096 leaves real headroom. 0 disables truncation.")
     p.add_argument("--max_new_tokens", type=int, default=32)
     p.add_argument("--gist_variants", type=_csv(str), default=list(gist_mcq.VARIANTS))
+    p.add_argument("--gist_corpus", default="pg", choices=["synthetic", "pg"],
+                   help="synthetic filler saturates every method at 1.000, even at tight "
+                        "budgets - see gist_mcq.build_samples's docstring. Only for fast, "
+                        "offline harness tests; real runs need pg's real prose.")
 
     # policy hyperparameters (Phase 6 sweeps these)
     p.add_argument("--rope_position_mode", default=None,
@@ -346,6 +350,7 @@ def main(argv=None) -> int:
                 context_lengths=sorted({t["context_len"] for t in todo}),
                 variants=sorted({t["variant"] for t in todo}),
                 n_samples=args.n_samples,
+                corpus=args.gist_corpus,
                 seed=args.seed,
             )
         }

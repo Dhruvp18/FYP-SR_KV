@@ -85,6 +85,7 @@ def test_gist_mcq_runs_end_to_end_through_the_harness(tmp_path):
         "--task", "gist_mcq",
         "--context_len", "512",
         "--gist_variants", "attribution,aggregation",
+        "--gist_corpus", "synthetic",
         "--n_samples", "2",
         "--max_new_tokens", "4",
         "--obs_window", "8",
