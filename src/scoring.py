@@ -175,10 +175,19 @@ def apply_rank_swap(
     the tokens whose eviction was a close call.
     """
     b, h, n = importance.shape
-    order = importance.argsort(dim=-1, descending=True)  # most important first
     if rank_swap_frac <= 0.0 or n_pick <= 0 or n_pick >= n:
-        return order[..., :n_pick]
+        # exact `topk`, not a derived argsort: `topk` and an unstable argsort
+        # can break ties differently (pool_scores' max-pooling produces exact
+        # ties routinely), and `test_unified_class_reproduces_snapkv_eviction_
+        # decisions` requires byte-identical selection against SnapKV's own
+        # `topk` call. Confirmed the hard way - this used to return
+        # `order[..., :n_pick]` from an unstable argsort and it was flaky
+        # (passed locally, failed on a different platform).
+        return importance.topk(n_pick, dim=-1).indices
 
+    # stable: ties broken by original index, reproducibly, not by whatever
+    # order an unstable sort happens to leave them in on a given platform.
+    order = importance.argsort(dim=-1, descending=True, stable=True)
     width = min(n, max(2, int(round(rank_swap_frac * n))))
     lo = max(0, min(n_pick - width // 2, n - width))
     hi = lo + width
