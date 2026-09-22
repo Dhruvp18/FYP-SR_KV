@@ -165,6 +165,7 @@ def measure(model, sample: PerplexitySample, cache, *, device=None) -> dict:
     )
     nll = float(loss)
     stats = cache.get_stats()
+    compress_times = list(getattr(cache, "compress_times", []))
     return {
         "nll": nll,
         "cache_stats": stats,
@@ -175,6 +176,8 @@ def measure(model, sample: PerplexitySample, cache, *, device=None) -> dict:
         "max_memory_allocated": (
             int(torch.cuda.max_memory_allocated()) if torch.cuda.is_available() else 0
         ),
+        "compress_seconds_total": sum(compress_times),
+        "compress_calls": len(compress_times),
     }
 
 

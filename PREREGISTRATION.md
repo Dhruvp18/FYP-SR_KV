@@ -168,3 +168,88 @@ the same gap E1 already has between perplexity and downstream usefulness. A
 loss here, on a task built to give the mechanism every advantage this project
 could construct, would be considerably stronger evidence against it than
 another null on tasks that were never designed to favour either policy.
+---
+
+## Addendum (2026-09-22) — H4: robustness to noise at the eviction boundary
+
+Written before any `rank_swap_frac>0` data exists. H1-H3 all asked whether
+centroid-merging preserves more *content*. H4 asks a different question:
+does centroid-merging make the policy more *robust* - specifically, more
+tolerant of getting individual keep/evict decisions wrong?
+
+The motivating intuition: a hard-eviction method that makes a wrong call on a
+borderline token loses that token completely, with no recourse. A
+clustering method that makes the identical wrong call still folds that token
+into a centroid alongside whatever else landed near the cutoff - lossy, but
+not a total loss. If that intuition is right, injecting artificial noise into
+*which* borderline tokens get evicted should hurt `snapkv_unified` more than
+it hurts `centroid_merge`, in proportion to how much noise is injected.
+
+This is a stress test, not a claim about how real eviction errors arise in
+practice. The scoring function is not being modified - the noise is injected
+mechanically, after scoring, only among tokens whose keep/evict status was
+already a close call (see `src/scoring.py::apply_rank_swap`). Tokens the
+policy is confident about (clearly the most/least important) are never
+touched, so this cannot manufacture a difference out of decisions that were
+never in question.
+
+### Mechanism
+
+`ScoringConfig.rank_swap_frac` (`src/scoring.py`): before the keep/evict
+top-k split in `SRKVCache._compress()`, a band of
+`round(rank_swap_frac * n_candidates)` slots straddling the cutoff (in
+importance-sorted order) has its keep/evict assignment randomly reshuffled.
+`rank_swap_frac=0` is exactly the original top-k (verified: full test suite
+green with the change in place, default unchanged). Applied identically
+regardless of `use_clustering`, so it is a clean one-flag addition to both
+`snapkv_unified` and `centroid_merge` - same class, same mechanism, per
+CLAUDE.md's binding design constraint.
+
+### Hypothesis
+
+**H4.** As `rank_swap_frac` increases from 0, `snapkv_unified`'s perplexity
+degrades more than `centroid_merge`'s.
+
+Primary statistic, per non-zero `rank_swap_frac` value X and per (context,
+budget) setting: the **differential degradation**
+
+    D = [nll(snapkv_unified, X) - nll(snapkv_unified, 0)]
+      - [nll(centroid_merge, X) - nll(centroid_merge, 0)]
+
+paired on `sample_idx` (the same prefix/continuation samples are reused
+across every `rank_swap_frac` value at a given context length, from the same
+seed), by paired bootstrap (10,000 resamples, 95% CI) - identical machinery
+to H1-H3. D > 0 means `snapkv_unified` degraded more, supporting H4.
+
+Also reported, not part of the verdict but requested for the writeup: each
+method's *own* slope - `centroid_merge(X)` vs `centroid_merge(0)`, and
+`snapkv_unified(X)` vs `snapkv_unified(0)` - independently, by the same
+paired bootstrap, so the raw degradation curve for each method is visible on
+its own, not just the difference between them.
+
+### Success criterion - identical bar to H1-H3
+
+For each `rank_swap_frac` value tested independently: SUPPORTED requires the
+95% CI on D to exclude zero in the predicted direction (D > 0), n >= 50
+pairs, holding at >= 2 of the 6 (context, budget) settings. Anything else is
+NOT SUPPORTED for that noise level.
+
+### Experiment
+
+**E4.** qwen2.5-1.5b, contexts 2048/4096/8192, budgets 0.2/0.3 - the same six
+settings as H1/E1, for continuity - methods `centroid_merge` and
+`snapkv_unified` only (this tests the clustering mechanism specifically, not
+the recency term), `rank_swap_frac` in {0.0, 0.10, 0.25}, n=50 documents per
+cell. `rank_swap_frac=0.0` is re-measured fresh under this addendum's code
+rather than reusing E1's numbers, so the comparison has no cross-run
+confound from the code change itself.
+
+### Known threat to validity
+
+`rank_swap_frac` is a synthetic intervention with no claimed correspondence
+to any real source of eviction error in this project's actual scoring
+function - a null result here says centroid-merging is not more robust to
+*this kind* of boundary noise, not that it is not robust to anything. A
+positive result establishes a robustness property under a controlled stress
+test, which is weaker than (but consistent with, and suggestive for) a claim
+about real deployment conditions.

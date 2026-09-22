@@ -99,6 +99,10 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--centroid_frac", type=float, default=None)
     p.add_argument("--cluster_mode", default=None, choices=[None, "kmeans", "temporal_chunk"])
     p.add_argument("--n_sink", type=int, default=None)
+    p.add_argument("--rank_swap_frac", type=float, default=None,
+                   help="H4: fraction of the candidate region, centred on the keep/evict "
+                        "cutoff, whose assignment is randomly reshuffled before top-k "
+                        "selection (0 = no-op, exact top-k). See PREREGISTRATION.md addendum.")
     p.add_argument("--recompress_slack", type=int, default=None,
                    help="delay compression until the cache is this many tokens over budget, "
                         "instead of recompressing on every single new token during decode. "
@@ -172,7 +176,7 @@ def cache_overrides(args, defaults: dict) -> dict:
     out: dict = {}
     for key in ("alpha", "beta", "lam", "obs_window", "pool_kernel", "n_centroids",
                 "centroid_frac", "cluster_mode", "n_sink", "rope_position_mode",
-                "recompress_slack"):
+                "recompress_slack", "rank_swap_frac"):
         value = getattr(args, key)
         if value is None:
             value = defaults.get(key)

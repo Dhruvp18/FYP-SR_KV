@@ -41,6 +41,7 @@ from ..clustering import cluster_and_merge
 from ..rope_positions import POSITION_MODES, RopeHelper
 from ..scoring import (
     ScoringConfig,
+    apply_rank_swap,
     combined_importance,
     compute_attention_scores,
     normalize_scores,
@@ -204,7 +205,7 @@ class SRKVCache(SRKVCacheBase):
             importance = importance.masked_fill(flags[:, :, lo:hi], float("-inf"))
 
         n_pick = min(n_pick, importance.shape[-1])
-        picked_local = importance.topk(n_pick, dim=-1).indices
+        picked_local = apply_rank_swap(importance, n_pick, self.scoring.rank_swap_frac)
         n_rest = importance.shape[-1] - n_pick
 
         keep_parts = [picked_local + lo]

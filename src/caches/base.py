@@ -22,6 +22,8 @@ head keeps differs, so a single head is the only well-defined place to count.
 
 from __future__ import annotations
 
+import time
+
 import torch
 from transformers.cache_utils import DynamicCache
 
@@ -81,6 +83,14 @@ class SRKVCacheBase(DynamicCache):
         self.query_buf: dict[int, torch.Tensor] = {}
         self.query_pos_buf: dict[int, torch.Tensor] = {}
 
+        #: wall-clock seconds spent inside `_compress()`, one entry per call
+        #: that actually ran (i.e. `should_compress()` was true). Diagnostic
+        #: only - not part of the get_stats() contract (CLAUDE.md fixes that
+        #: to exactly four keys) - read directly off the cache instance after
+        #: a run. CUDA-synchronized around the call so the timing reflects
+        #: real device work, not just kernel-launch overhead.
+        self.compress_times: list[float] = []
+
     # ------------------------------------------------------------------
     # DynamicCache interface
     # ------------------------------------------------------------------
@@ -130,6 +140,7 @@ class SRKVCacheBase(DynamicCache):
         self.budget_history.clear()
         self.query_buf.clear()
         self.query_pos_buf.clear()
+        self.compress_times.clear()
 
     # ------------------------------------------------------------------
     # SR-KV hooks
@@ -141,7 +152,13 @@ class SRKVCacheBase(DynamicCache):
         passthrough and does nothing.
         """
         if self.should_compress(layer_idx):
+            if torch.cuda.is_available():
+                torch.cuda.synchronize()
+            started = time.perf_counter()
             self._compress(layer_idx, query_states, module)
+            if torch.cuda.is_available():
+                torch.cuda.synchronize()
+            self.compress_times.append(time.perf_counter() - started)
         if layer_idx == 0:
             # sampled *after* compression, so the trajectory reflects what the
             # cache actually holds rather than its pre-eviction high-water mark

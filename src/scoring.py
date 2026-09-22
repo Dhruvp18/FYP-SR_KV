@@ -40,12 +40,19 @@ class ScoringConfig:
     pool_kernel: int = 7
     pool_type: str = "maxpool"  # "maxpool" | "avgpool" | "none"
     normalize_attn: bool = True
+    #: H4 (PREREGISTRATION.md addendum): fraction of the candidate region,
+    #: centred on the keep/evict cutoff, whose keep/evict assignment is
+    #: randomly reshuffled by `apply_rank_swap()` before top-k selection.
+    #: 0.0 is a no-op (exact top-k, unchanged behaviour).
+    rank_swap_frac: float = 0.0
 
     def __post_init__(self):
         if self.pool_type not in ("maxpool", "avgpool", "none"):
             raise ValueError(f"pool_type must be maxpool|avgpool|none, got {self.pool_type!r}")
         if self.obs_window < 1:
             raise ValueError("obs_window must be >= 1")
+        if not 0.0 <= self.rank_swap_frac <= 1.0:
+            raise ValueError(f"rank_swap_frac must be in [0, 1], got {self.rank_swap_frac}")
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -147,6 +154,40 @@ def combined_importance(
 ) -> torch.Tensor:
     """importance = alpha * attn + beta * recency."""
     return alpha * attn_scores.float() + beta * decay.float()
+
+
+def apply_rank_swap(
+    importance: torch.Tensor, n_pick: int, rank_swap_frac: float
+) -> torch.Tensor:
+    """Keep-indices into `importance`'s last dim, with boundary noise injected.
+
+    H4 (PREREGISTRATION.md addendum): tests whether centroid-merging is more
+    robust than hard eviction to *noise in the eviction decision itself*, as
+    opposed to noise in the scores. At `rank_swap_frac=0` this is exactly
+    `importance.topk(n_pick).indices` - a no-op.
+
+    For `rank_swap_frac>0`, a band of `round(rank_swap_frac * n_candidates)`
+    candidates straddling the keep/evict cutoff (in importance-sorted order)
+    has its keep/evict assignment randomly reshuffled; candidates outside the
+    band - the clearly-important and the clearly-unimportant - are never
+    touched, because noise there cannot change any decision (both methods
+    would keep/evict them regardless). This isolates the question to exactly
+    the tokens whose eviction was a close call.
+    """
+    b, h, n = importance.shape
+    order = importance.argsort(dim=-1, descending=True)  # most important first
+    if rank_swap_frac <= 0.0 or n_pick <= 0 or n_pick >= n:
+        return order[..., :n_pick]
+
+    width = min(n, max(2, int(round(rank_swap_frac * n))))
+    lo = max(0, min(n_pick - width // 2, n - width))
+    hi = lo + width
+
+    band = order[..., lo:hi]  # [b, h, width]
+    perm = torch.argsort(torch.rand(b, h, width, device=importance.device), dim=-1)
+    order = order.clone()
+    order[..., lo:hi] = band.gather(-1, perm)
+    return order[..., :n_pick]
 
 
 def importance_scores(

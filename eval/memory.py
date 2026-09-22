@@ -94,6 +94,7 @@ def generate_and_measure(
 
     stats = cache.get_stats()
     history = list(getattr(cache, "budget_history", []))
+    compress_times = list(getattr(cache, "compress_times", []))
     return {
         "generated_text": text,
         "prompt_tokens": prompt_len,
@@ -107,4 +108,10 @@ def generate_and_measure(
         "budget_used_pct_final": history[-1] if history else 100.0,
         "conservation_ok": bool(cache.check_conservation()),
         "cache_config": cache.config_dict(),
+        # diagnostic only (not part of the get_stats() contract): total time
+        # spent inside _compress() across every layer/call this generation,
+        # and how many calls that was, so it can be read as ms/call or as a
+        # % of `seconds` without re-deriving anything.
+        "compress_seconds_total": sum(compress_times),
+        "compress_calls": len(compress_times),
     }
