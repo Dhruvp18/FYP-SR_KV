@@ -403,6 +403,35 @@ phase8-gist:
 phase8-analyse:
 	$(PY) scripts/analyse_phase8.py
 
+# --- Phase 8 addendum: compression-time overhead (centroid_merge vs snapkv_unified) ---
+# Diagnostic, not a hypothesis test - no pre-registered bar, just raw
+# compress_seconds_total/compress_calls per record (base.py instruments the
+# _compress() call directly), same grid as Phase 5's NIAH factorial so the
+# numbers are comparable to what was actually run for the headline result.
+phase8-compress-overhead:
+	$(PY) eval/run.py --method snapkv_unified,centroid_merge \
+	  --model $(MODEL) --task niah \
+	  --context_len 2048,4096,8192 --budget 0.2 --depths 0,25,50,75,100 \
+	  --n_samples 3 --precision bf16 \
+	  --output $(RESULTS)/phase8_compress_overhead_$(MODEL).json
+
+# --- Phase 8 addendum: H4 rank-swap boundary-noise robustness ----------------
+# Pre-registered in PREREGISTRATION.md (2026-09-22 addendum) BEFORE any of
+# this was run. Same six (context, budget) settings as H1/E1, methods
+# centroid_merge/snapkv_unified only. rank_swap_frac=0.00 is re-measured
+# fresh (not reused from E1) so the comparison has no cross-run confound.
+RANKSWAP_SAMPLES ?= 50
+
+phase8-rankswap:
+	for frac in 0.00 0.10 0.25; do \
+	  $(PY) eval/run.py --method centroid_merge,snapkv_unified \
+	    --model $(MODEL) --task perplexity \
+	    --context_len $(PPL_CONTEXTS) --budget $(PPL_BUDGETS) \
+	    --n_samples $(RANKSWAP_SAMPLES) --precision bf16 \
+	    --rank_swap_frac $$frac \
+	    --output $(RESULTS)/phase8_rankswap_frac$$frac_$(MODEL).json || exit 1; \
+	done
+
 # --- Phase 7: every figure, one command ------------------------------------
 phase7 plots report_artifacts:
 	$(PY) scripts/make_plots.py --results-dir $(RESULTS) --figures-dir $(FIGURES)
