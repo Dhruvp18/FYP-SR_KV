@@ -1,5 +1,5 @@
 {
-  "id": "dhruvp18/sr-kv-phase8",
+  "id": "chaitrasamant/sr-kv-phase8",
   "title": "sr-kv-phase8",
   "code_file": "sr-kv-phase8.ipynb",
   "language": "python",
@@ -10,6 +10,6 @@
   "dataset_sources": [],
   "competition_sources": [],
   "kernel_sources": [
-    "dhruvp18/sr-kv-phase7"
+    "chaitrasamant/sr-kv-phase1"
   ]
 }
