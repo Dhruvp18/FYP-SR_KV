@@ -1,10 +1,12 @@
 """The one WebSocket endpoint: `/ws/generate`.
 
-One inbound loop (receives `start_run`/`cancel_run`) and, per run, one
-background task that drives the decode loop in a worker thread and drains its
-events onto the same socket. Only one run may hold `model_singleton.RUN_LOCK`
-at a time - a second `start_run` while one is in flight gets an immediate
-`error`, never a queued or interleaved run (see `model_singleton.py`).
+One inbound loop (receives `start_gist_run`/`start_batch_run`/`cancel_run`)
+and, per run, one background task that drives the decode loop (or the batch
+loop) in a worker thread and drains its events onto the same socket. Only
+one run may hold `model_singleton.RUN_LOCK` at a time - a second start
+message while one is in flight gets an immediate `error`, never a queued or
+interleaved run (see `model_singleton.py`). A batch run holds the lock for
+its whole duration, same rule.
 """
 
 from __future__ import annotations
@@ -15,8 +17,10 @@ import logging
 from fastapi import WebSocket, WebSocketDisconnect
 
 from . import model_singleton
-from .decode_loop import run as run_decode_loop
-from .protocol import CancelRun, StartRun, parse_client_message
+from .batch import run_gist_batch
+from .decode_loop import run_gist
+from .gist_source import build_demo_sample
+from .protocol import CancelRun, StartBatchRun, StartGistRun, parse_client_message
 
 logger = logging.getLogger(__name__)
 
@@ -58,7 +62,9 @@ async def handle_connection(websocket: WebSocket) -> None:
             cancel_event.set()
 
 
-async def _run_and_stream(websocket: WebSocket, msg: StartRun, cancel_event: asyncio.Event) -> None:
+async def _run_and_stream(
+    websocket: WebSocket, msg: StartGistRun | StartBatchRun, cancel_event: asyncio.Event
+) -> None:
     loop = asyncio.get_running_loop()
     queue: asyncio.Queue = asyncio.Queue()
 
@@ -69,17 +75,33 @@ async def _run_and_stream(websocket: WebSocket, msg: StartRun, cancel_event: asy
         async with model_singleton.RUN_LOCK:
             try:
                 model, tokenizer = await asyncio.to_thread(model_singleton.get_model)
-                await asyncio.to_thread(
-                    run_decode_loop,
-                    model,
-                    tokenizer,
-                    msg.prompt,
-                    budget=msg.budget,
-                    max_new_tokens=msg.max_new_tokens,
-                    overrides=None,
-                    emit=emit,
-                    should_cancel=cancel_event.is_set,
-                )
+                if isinstance(msg, StartBatchRun):
+                    await asyncio.to_thread(
+                        run_gist_batch,
+                        model,
+                        tokenizer,
+                        context_len=msg.context_len,
+                        emit=emit,
+                        should_cancel=cancel_event.is_set,
+                    )
+                else:
+                    sample = await asyncio.to_thread(
+                        build_demo_sample,
+                        tokenizer,
+                        variant=msg.variant,
+                        context_len=msg.context_len,
+                        corpus="pg",
+                    )
+                    await asyncio.to_thread(
+                        run_gist,
+                        model,
+                        tokenizer,
+                        sample,
+                        budget=msg.budget,
+                        overrides=None,
+                        emit=emit,
+                        should_cancel=cancel_event.is_set,
+                    )
             except Exception:
                 logger.exception("decode loop failed")
                 emit({"type": "error", "message": "generation failed - see server logs for details"})

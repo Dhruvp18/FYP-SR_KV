@@ -2,25 +2,21 @@
 
 import { AnimatePresence, motion } from "framer-motion";
 import { useRunStore } from "@/store/useRunStore";
+import { BUDGET_MAX, BUDGET_MIN, GIST_CONTEXT_LEN_MAX, GIST_CONTEXT_LEN_MIN, PACE_MAX_MS, PACE_MIN_MS } from "@/lib/config";
 import { SummaryTable } from "./SummaryTable";
 import { TeammatePilotTable } from "./TeammatePilotTable";
-
-const BUDGET_MIN = 0.1;
-const BUDGET_MAX = 0.5;
-const MAX_TOKENS_CAP = 80; // must match server/config.py MAX_NEW_TOKENS_CAP
-const PACE_MIN_MS = 150;
-const PACE_MAX_MS = 1400;
 
 export function AdvancedPanel() {
   const open = useRunStore((s) => s.advancedOpen);
   const connection = useRunStore((s) => s.connection);
   const budget = useRunStore((s) => s.budget);
   const setBudget = useRunStore((s) => s.setBudget);
-  const maxNewTokens = useRunStore((s) => s.maxNewTokens);
-  const setMaxNewTokens = useRunStore((s) => s.setMaxNewTokens);
+  const contextLen = useRunStore((s) => s.contextLen);
+  const setContextLen = useRunStore((s) => s.setContextLen);
   const playbackMs = useRunStore((s) => s.playbackMs);
   const setPlaybackMs = useRunStore((s) => s.setPlaybackMs);
   const running = useRunStore((s) => s.phase === "generating");
+  const resetTally = useRunStore((s) => s.resetTally);
 
   return (
     <AnimatePresence>
@@ -61,18 +57,18 @@ export function AdvancedPanel() {
               </label>
 
               <label className="flex shrink-0 items-center gap-1.5 text-[11px] text-text-dim">
-                length
+                passage length
                 <input
                   type="range"
-                  min={4}
-                  max={MAX_TOKENS_CAP}
-                  step={2}
-                  value={maxNewTokens}
+                  min={GIST_CONTEXT_LEN_MIN}
+                  max={GIST_CONTEXT_LEN_MAX}
+                  step={50}
+                  value={contextLen}
                   disabled={running}
-                  onChange={(e) => setMaxNewTokens(Number(e.target.value))}
+                  onChange={(e) => setContextLen(Number(e.target.value))}
                   className="accent-lane-srkv"
                 />
-                <span className="w-6 text-text">{maxNewTokens}</span>
+                <span className="w-10 text-text">{contextLen}</span>
               </label>
 
               <label className="flex shrink-0 items-center gap-1.5 text-[11px] text-text-dim">
@@ -88,6 +84,14 @@ export function AdvancedPanel() {
                 />
                 <span className="w-9 text-text">{playbackMs}</span>
               </label>
+
+              <button
+                onClick={resetTally}
+                disabled={running}
+                className="rounded-md border border-border px-2.5 py-1 text-[11px] font-medium text-text-dim hover:bg-panel-2 hover:text-text disabled:opacity-50"
+              >
+                Reset accuracy tally
+              </button>
             </div>
 
             <div className="border-t border-border-soft pt-3">

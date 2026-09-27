@@ -1,10 +1,11 @@
 "use client";
 
 import { motion } from "framer-motion";
+import { Fragment, useEffect, useRef } from "react";
 import { useRunStore } from "@/store/useRunStore";
 import { useLaneWords } from "@/lib/useLaneWords";
 import { LANE_COLOR_VAR, LANE_LABEL } from "@/lib/palette";
-import { FULL_STEP_CAPTION, MECHANISM, RISK } from "@/lib/copy";
+import { MECHANISM, RISK } from "@/lib/copy";
 import { clamp } from "@/lib/format";
 import { Word } from "./Word";
 import type { LaneId } from "@/lib/types";
@@ -12,14 +13,24 @@ import type { LaneId } from "@/lib/types";
 const MAX_STAGGERED_WORDS = 40; // beyond this, later words all reveal together - no absurd waits on long outputs
 
 export function StepScreen({ id }: { id: LaneId }) {
-  const { words, statuses, lane } = useLaneWords(id);
+  const { words, statuses, lane, passageEnd, questionEnd } = useLaneWords(id);
   const playbackMs = useRunStore((s) => s.playbackMs);
+  const tally = useRunStore((s) => s.tally[id]);
   const color = LANE_COLOR_VAR[id];
-  const isFull = id === "full";
 
   const perWordDelay = clamp(playbackMs / 25000, 0.006, 0.045);
+  const caption = composeCaption(id, lane, statuses);
+  const pct = tally.total > 0 ? Math.round((100 * tally.correct) / tally.total) : null;
 
-  const caption = isFull ? FULL_STEP_CAPTION : composeCaption(lane, statuses);
+  const streamRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    // The passage/question boundary is the whole point of the two-pass
+    // protocol (see decode_loop.py's run_gist docstring) - land on it
+    // directly rather than making the viewer scroll a long passage
+    // themselves to find it.
+    const marker = streamRef.current?.querySelector('[data-divider="passage"]');
+    marker?.scrollIntoView({ block: "center" });
+  }, [id, passageEnd]);
 
   return (
     <motion.div
@@ -38,19 +49,42 @@ export function StepScreen({ id }: { id: LaneId }) {
       </div>
 
       <div className="flex flex-col items-center">
-        <span className="text-[64px] font-bold leading-none text-text">{lane.stats.n_tokens_cached}</span>
-        <span className="text-[12px] text-text-faint">tokens in cache</span>
+        <div className="flex items-baseline gap-3">
+          <span className="text-[64px] font-bold leading-none text-text">{pct !== null ? `${pct}%` : "—"}</span>
+          {lane.chosenLetter !== null && (
+            <span
+              className="rounded-md px-2 py-1 text-[15px] font-bold"
+              style={{
+                color: lane.correct ? "var(--good)" : "var(--danger)",
+                background: `color-mix(in srgb, ${lane.correct ? "var(--good)" : "var(--danger)"} 15%, transparent)`,
+              }}
+            >
+              chose {lane.chosenLetter} {lane.correct ? "✓" : "✗"}
+            </span>
+          )}
+        </div>
+        <span className="text-[12px] text-text-faint">
+          correct this session ({tally.correct}/{tally.total})
+        </span>
+        <span className="mt-1 text-[11px] text-text-faint">{lane.stats.n_tokens_cached} tokens in cache</span>
       </div>
 
       <div
-        className="max-h-[26vh] w-full overflow-y-auto rounded-xl border border-border bg-panel px-5 py-4 leading-[2]"
+        ref={streamRef}
+        className="max-h-[26vh] w-full overflow-y-auto rounded-xl border border-border bg-panel px-5 py-4 leading-[2] scroll-smooth"
         style={{ borderColor: `color-mix(in srgb, ${color} 35%, var(--border))` }}
       >
         {words.length === 0 ? (
           <span className="text-[13px] text-text-faint">no tokens yet</span>
         ) : (
           words.map((w, i) => (
-            <Word key={i} text={w} status={statuses[i]} color={color} delay={Math.min(i, MAX_STAGGERED_WORDS) * perWordDelay} />
+            <Fragment key={i}>
+              {i === passageEnd && <Divider label="❓ question asked here" color={color} marker="passage" />}
+              {i === questionEnd && questionEnd > passageEnd && (
+                <Divider label="the model answers from here" color={color} subtle />
+              )}
+              <Word text={w} status={statuses[i]} color={color} delay={Math.min(i, MAX_STAGGERED_WORDS) * perWordDelay} />
+            </Fragment>
           ))
         )}
       </div>
@@ -67,7 +101,48 @@ export function StepScreen({ id }: { id: LaneId }) {
   );
 }
 
-function composeCaption(lane: ReturnType<typeof useLaneWords>["lane"], statuses: ReturnType<typeof useLaneWords>["statuses"]): string {
+function Divider({
+  label,
+  color,
+  subtle,
+  marker,
+}: {
+  label: string;
+  color: string;
+  subtle?: boolean;
+  marker?: string;
+}) {
+  return (
+    <span
+      data-divider={marker}
+      className="my-1.5 flex items-center gap-2 py-0.5"
+      style={{ display: "flex", width: "100%" }}
+    >
+      <span
+        className="h-px flex-1"
+        style={{ background: `color-mix(in srgb, ${color} ${subtle ? 25 : 55}%, transparent)` }}
+      />
+      <span
+        className="whitespace-nowrap text-[10.5px] font-semibold uppercase tracking-wide"
+        style={{ color: `color-mix(in srgb, ${color} ${subtle ? 60 : 100}%, var(--text-dim))` }}
+      >
+        {label}
+      </span>
+      <span
+        className="h-px flex-1"
+        style={{ background: `color-mix(in srgb, ${color} ${subtle ? 25 : 55}%, transparent)` }}
+      />
+    </span>
+  );
+}
+
+function composeCaption(
+  id: LaneId,
+  lane: ReturnType<typeof useLaneWords>["lane"],
+  statuses: ReturnType<typeof useLaneWords>["statuses"],
+): string {
+  if (id === "full") return "Nothing removed — this is the full cost.";
+
   const folded = statuses.filter((s) => s === "folded").length;
   const evicted = statuses.filter((s) => s === "evicted").length;
   const alive = statuses.length - folded - evicted;

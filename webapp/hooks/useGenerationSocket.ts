@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef } from "react";
 import { useRunStore } from "@/store/useRunStore";
-import type { ServerEvent } from "@/lib/types";
+import type { ServerEvent, Variant } from "@/lib/types";
 
 const WS_URL = process.env.NEXT_PUBLIC_WS_URL ?? "ws://localhost:8000/ws/generate";
 const RECONNECT_DELAY_MS = 1500;
@@ -46,11 +46,18 @@ export function useGenerationSocket() {
     };
   }, [setConnection, applyServerEvent]);
 
-  const start = useCallback((prompt: string, budget: number, maxNewTokens: number) => {
+  const startGist = useCallback((budget: number, variant: Variant | null, contextLen: number) => {
     const ws = wsRef.current;
     if (!ws || ws.readyState !== WebSocket.OPEN) return;
-    useRunStore.getState().startRun(budget, maxNewTokens);
-    ws.send(JSON.stringify({ type: "start_run", prompt, budget, max_new_tokens: maxNewTokens }));
+    useRunStore.getState().startGistRun(budget, variant, contextLen);
+    ws.send(JSON.stringify({ type: "start_gist_run", budget, variant, context_len: contextLen }));
+  }, []);
+
+  const startBatch = useCallback((contextLen: number) => {
+    const ws = wsRef.current;
+    if (!ws || ws.readyState !== WebSocket.OPEN) return;
+    useRunStore.getState().startBatchRun(contextLen);
+    ws.send(JSON.stringify({ type: "start_batch_run", context_len: contextLen }));
   }, []);
 
   const cancel = useCallback(() => {
@@ -59,5 +66,5 @@ export function useGenerationSocket() {
     ws.send(JSON.stringify({ type: "cancel_run" }));
   }, []);
 
-  return { start, cancel };
+  return { startGist, startBatch, cancel };
 }

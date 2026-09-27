@@ -10,9 +10,21 @@ export type WordStatus = "alive" | "sink" | "folded" | "evicted";
 
 export function useLaneWords(id: LaneId) {
   const lane = useRunStore((s) => s.lanes[id]);
-  const promptWords = useRunStore((s) => s.promptWords);
+  const passageWords = useRunStore((s) => s.passageWords);
+  const questionWords = useRunStore((s) => s.questionWords);
 
-  const words = useMemo(() => [...promptWords, ...lane.decodeWords], [promptWords, lane.decodeWords]);
+  const words = useMemo(
+    () => [...passageWords, ...questionWords, ...lane.decodeWords],
+    [passageWords, questionWords, lane.decodeWords],
+  );
+
+  // Where the passage ends and the question begins, and where the question
+  // ends and the model's own generated answer begins - the two-pass boundary
+  // the whole point of this task rests on (see server/decode_loop.py's
+  // run_gist docstring): everything left of passageEnd was already
+  // compressed with zero knowledge the question existed.
+  const passageEnd = passageWords.length;
+  const questionEnd = passageEnd + questionWords.length;
 
   const aliveSet = useMemo(() => {
     const s = new Set<number>();
@@ -52,5 +64,5 @@ export function useLaneWords(id: LaneId) {
     return { alive, folded, evicted, total: words.length };
   }, [statuses, words.length]);
 
-  return { lane, words, statuses, counts };
+  return { lane, words, statuses, counts, passageEnd, questionEnd };
 }

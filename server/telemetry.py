@@ -1,19 +1,33 @@
 """Observing a cache's own bookkeeping, without reimplementing its decisions.
 
-`SRKVCacheBase` (src/caches/base.py) tracks, per slot, a current RoPE
-`position`, a `weight` (how many original tokens it represents), and an
-`is_centroid` flag - but it does not keep a history of *which* original token
-positions fed a given centroid, only the count. The demo wants to draw that
-span, so this module reconstructs it by diffing consecutive snapshots of the
-cache's own public state: `cache.positions[0]`, `cache.slot_weights[0]`,
-`cache.is_centroid[0]` (layer 0, batch 0, head 0 - the class's own documented
-representative slot, see base.py's "Stats are read off (batch 0, kv-head 0)").
+The obvious design - track each centroid's identity across steps and its
+exact set of original members - turns out not to be reconstructable in
+general. `SRKVCache._compress()` (`src/caches/sr_kv.py`) reclusters by
+default (`recluster_centroids=True`, the class's own default): a compress
+call can dissolve *every* existing centroid and re-run k-means over the
+combined pool of old centroid members and newly-eligible plain tokens,
+producing a fresh set of `n_centroids` slots with no stable correspondence to
+the previous ones. A slot's blended position isn't "the same centroid,
+repositioned" from one step to the next - it can be a genuinely different
+grouping. Trying to match old centroids to new ones by weight/position
+(an earlier version of this file did exactly that) works until two or more
+centroids coexist and reclustering reshuffles them, at which point the
+matching silently misattributes members - some real folds get counted as
+hard evictions instead, breaking the `seen == alive + folded + evicted`
+identity real runs otherwise satisfy exactly.
 
-This never guesses at scoring or eviction logic. It only asks: which slots
-that existed a moment ago are gone now, and which slot that's new now has a
-weight that adds up to some of them - and treats that arithmetic match as "the
-gone ones were folded into this one." A slot that vanishes with no matching
-weight increase anywhere was hard-evicted, not merged.
+What *is* exactly knowable, every step, needs no matching at all: which
+original positions are currently individual plain slots (their position is
+always their own exact original position - a plain token is never
+repositioned) - call this "alive." A position that stops being alive stops
+being alive forever (no algorithm in this repo ever un-merges or restores a
+token), and CLAUDE.md's own contract fixes what "not alive" means, per
+method: `use_clustering=True` methods (`centroid_merge`, `sr_kv`) never hard
+drop anything - every non-alive token is inside *some* centroid, forever
+folded, never evicted. `use_clustering=False` methods never form a centroid
+at all - every non-alive token is hard-evicted. So "not alive" plus "does
+this method cluster" is the whole answer, with no per-slot matching to get
+wrong.
 """
 
 from __future__ import annotations
@@ -39,93 +53,65 @@ def snapshot(cache) -> SlotSnapshot:
 
 
 @dataclass
-class MergeEvent:
-    position: float
-    weight: int
-    member_positions: list[int]
-
-
-@dataclass
 class Diff:
-    merged: list[MergeEvent] = field(default_factory=list)
+    #: positions that stopped being alive on *this* call (only meaningful for
+    #: hard-eviction methods; empty for clustering methods, since nothing
+    #: they drop is a hard eviction).
     evicted_positions: list[int] = field(default_factory=list)
-    #: every original position currently folded into *some* centroid, and
-    #: every original position ever hard-evicted (cumulative, whole run) -
-    #: computed here so the frontend never has to reconstruct per-position
-    #: status itself from a stream of deltas (fragile: centroid positions
-    #: drift a little every step even with no new merge, so "match by
-    #: position" breaks across steps - matching is done once, here, using the
-    #: cache's own weight/position pairing).
+    #: positions that stopped being alive on *this* call for a clustering
+    #: method - i.e. were just folded into the centroid pool.
+    newly_folded_positions: list[int] = field(default_factory=list)
+    #: every original position currently folded into *some* centroid
+    #: (cumulative, whole run so far).
     folded_positions: list[int] = field(default_factory=list)
+    #: every original position ever hard-evicted (cumulative, whole run).
     evicted_positions_cumulative: list[int] = field(default_factory=list)
 
 
+def _alive_positions(snap: SlotSnapshot) -> set[int]:
+    return {int(round(p)) for p, is_c in zip(snap.positions, snap.is_centroid) if not is_c}
+
+
 class LaneTelemetryState:
-    """Per-lane membership tracker, seeded fresh for every new run."""
+    """Per-lane tracker, seeded fresh for every new run.
 
-    def __init__(self) -> None:
-        #: rounded-position identity -> the set of *original* token positions
-        #: it currently stands for. A brand-new real token is seeded as {p: {p}}
-        #: the first time it's observed.
-        self.membership: dict[int, set[int]] = {}
-        self.all_evicted: set[int] = set()
+    `uses_clustering` decides where a position that stops being alive gets
+    attributed - it must match the real flag the lane's cache was actually
+    built with (`src/caches/__init__.py`'s `METHODS` dict), not be guessed.
+    """
 
-    def diff(self, prev: SlotSnapshot, new: SlotSnapshot) -> Diff:
-        prev_by_key = {round(p): (w, c) for p, w, c in zip(prev.positions, prev.weights, prev.is_centroid)}
-        new_by_key = {round(p): (w, c) for p, w, c in zip(new.positions, new.weights, new.is_centroid)}
-        prev_keys, new_keys = set(prev_by_key), set(new_by_key)
+    def __init__(self, uses_clustering: bool) -> None:
+        self.uses_clustering = uses_clustering
+        self.alive: set[int] = set()
+        self.folded: set[int] = set()
+        self.evicted: set[int] = set()
 
-        appeared = new_keys - prev_keys
-        disappeared = new_keys.symmetric_difference(prev_keys) & prev_keys
-        remaining_disappeared = set(disappeared)
+    def observe(self, new_segment_positions: range, new_snapshot: SlotSnapshot) -> Diff:
+        """Call once after every forward step (whether it added one decode
+        token or a whole multi-token passage/question segment).
+
+        `new_segment_positions` is exactly the positions this call added
+        that didn't exist a moment ago - required even though they'll
+        usually just show up "alive" in `new_snapshot`, because a segment
+        can compress *within its own forward call* (segment longer than
+        remaining budget headroom): some of its own brand-new tokens can be
+        folded or evicted before this function ever sees them as "alive."
+        Without including them here, that would look like they were simply
+        never seen, not like they were dropped.
+        """
+        candidates = self.alive | set(new_segment_positions)
+        new_alive = _alive_positions(new_snapshot)
+        newly_gone = candidates - new_alive
+        self.alive = new_alive
 
         out = Diff()
-        for a_pos in sorted(appeared):
-            target_weight, a_is_centroid = new_by_key[a_pos]
-            self.membership.setdefault(a_pos, {a_pos})  # seed, may be overwritten below
-            if not a_is_centroid:
-                # a real new token is never "the same slot" as anything that
-                # just vanished - only a centroid can be the result of a
-                # compress() step (a merge, or the same centroid re-positioned
-                # with unchanged weight). Matching a brand-new plain token
-                # against a same-weight disappeared plain token would wrongly
-                # read every hard-eviction (streaming_llm/snapkv_unified) as a
-                # silent no-op instead of a real, permanent eviction.
-                continue
-            candidates = sorted(remaining_disappeared, key=lambda p: abs(p - a_pos))
-            chosen: list[int] = []
-            acc = 0
-            for c_pos in candidates:
-                c_w, _ = prev_by_key[c_pos]
-                if acc + c_w <= target_weight:
-                    chosen.append(c_pos)
-                    acc += c_w
-                if acc == target_weight:
-                    break
-            if acc == target_weight and chosen:
-                members: set[int] = set()
-                for c_pos in chosen:
-                    members |= self.membership.pop(c_pos, {c_pos})
-                    remaining_disappeared.discard(c_pos)
-                self.membership[a_pos] = members
-                if len(chosen) > 1:
-                    # more than one prior slot collapsed into this one - a real
-                    # merge, not just a centroid's blended position drifting.
-                    out.merged.append(
-                        MergeEvent(position=a_pos, weight=target_weight, member_positions=sorted(members))
-                    )
+        if self.uses_clustering:
+            self.folded |= newly_gone
+            out.newly_folded_positions = sorted(newly_gone)
+        else:
+            self.evicted |= newly_gone
+            out.evicted_positions = sorted(newly_gone)
 
-        for d_pos in remaining_disappeared:
-            members = self.membership.pop(d_pos, {d_pos})
-            out.evicted_positions.extend(sorted(members))
-
-        self.all_evicted.update(out.evicted_positions)
-        out.evicted_positions_cumulative = sorted(self.all_evicted)
-
-        folded: set[int] = set()
-        for pos, is_c in zip(new.positions, new.is_centroid):
-            if is_c:
-                folded |= self.membership.get(round(pos), set())
-        out.folded_positions = sorted(folded)
-
+        out.folded_positions = sorted(self.folded)
+        out.evicted_positions_cumulative = sorted(self.evicted)
         return out

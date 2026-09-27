@@ -14,18 +14,18 @@ const PAD_B = 20;
 
 export function TrendChart() {
   const lanes = useRunStore((s) => s.lanes);
-  const promptTokens = useRunStore((s) => s.promptTokens);
+  const passageTokens = useRunStore((s) => s.passageTokens);
   const budget = useRunStore((s) => s.budget);
 
   const maxY = useMemo(() => {
-    let m = Math.ceil(promptTokens * budget) || 4;
+    let m = Math.ceil(passageTokens * budget) || 4;
     LANE_METHODS.forEach((id) => {
       lanes[id].history.forEach((v) => {
         if (v > m) m = v;
       });
     });
     return Math.ceil(m * 1.15);
-  }, [lanes, promptTokens, budget]);
+  }, [lanes, passageTokens, budget]);
 
   const maxX = useMemo(() => {
     let m = 1;
@@ -35,7 +35,10 @@ export function TrendChart() {
     return m;
   }, [lanes]);
 
-  const budgetTokens = Math.round(promptTokens * budget) || 0;
+  // Mirrors server/lanes.py's own floor (min_budget_tokens=8) so this
+  // reference line matches what the backend actually targets, not a naive
+  // budget*passage_len that can read low for a short passage.
+  const budgetTokens = Math.min(Math.max(Math.round(passageTokens * budget), 8), passageTokens || 8);
 
   function xy(i: number, v: number): string {
     const x = PAD_L + ((W - PAD_L - PAD_R) * i) / maxX;

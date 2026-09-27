@@ -7,12 +7,18 @@ eviction/merge behaviour; it only picks which method name + budget to ask for.
 
 from __future__ import annotations
 
-from src.caches import make_cache
+from src.caches import METHODS, make_cache
 
 #: matches the 5 method families under `configs/` (excludes the standalone
 #: "snapkv" cross-check and the unnamed "recency_hard_evict" corner - neither
 #: is part of the demo's comparison set).
 LANE_METHODS = ["full", "streaming_llm", "snapkv_unified", "centroid_merge", "sr_kv"]
+
+#: whether each lane's cache ever forms a centroid, read from the real flags
+#: `make_cache` builds it with (`src/caches/__init__.py`) rather than
+#: guessed here - `server/telemetry.py` needs this to know whether "not
+#: alive anymore" means "folded" or "hard-evicted" for that lane.
+USES_CLUSTERING: dict[str, bool] = {name: bool(METHODS[name]["flags"].get("use_clustering")) for name in LANE_METHODS}
 
 #: the real experiment defaults from `configs/defaults.yaml`, applied
 #: identically to every lane. Each cache class absorbs whatever it doesn't

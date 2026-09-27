@@ -6,7 +6,17 @@
 // tested settings, and showed no significant advantage on retrieval/recall.
 // Do not soften or reverse that framing without re-checking the data.
 
-import type { LaneId } from "./types";
+import type { LaneId, Variant } from "./types";
+
+// Grounded in eval/gist_mcq.py's own module docstring and the two
+// `_build_attribution`/`_build_aggregation` sample builders - keep these in
+// sync if that file's task design changes.
+export const VARIANT_EXPLAINER: Record<Variant, string> = {
+  attribution:
+    "One person→team fact, restated 4 times in different wording and scattered through the passage (plus 2 unrelated decoy mentions of other people). Tests whether an entity-attribute link survives compression even though no single restatement looks important on its own — nothing in a short attention window flags it, since the question hasn't been asked yet.",
+  aggregation:
+    "One topic is mentioned 5 times, two others once each, one never. Tests whether the relative frequency of scattered mentions survives compression, not just whether a topic was mentioned at all — something hard eviction can't represent, since a token either survives whole or is gone.",
+};
 
 export const MECHANISM: Record<LaneId, string> = {
   full: "Every token the model has read stays in memory, individually, forever.",
@@ -62,3 +72,11 @@ export const TEAMMATE_PILOT_FINDING =
 
 export const TEAMMATE_PILOT_CAVEAT =
   "A teammate's own pilot, not yet merged into this repo, so it's separate from the Phase 8 analysis above. Its own conclusion: this pilot did not establish the application advantage it was testing for.";
+
+// Benchmark mode ("BenchmarkScreen"): a live, interactive demo built on the
+// real Phase 8 H3a/H3b task (PREREGISTRATION.md addendum) and its real
+// scoring code, run at a single fixed budget and a fraction of the real
+// scale so it fits in minutes on a CPU demo machine. Keep this caveat next
+// to every table this mode renders.
+export const BENCHMARK_CAVEAT =
+  "A small, live demo of the real Phase 8 H3a/H3b task and scoring code, unchanged — but at a single fixed budget (20%) picked for a clear demo, not the pre-registered budgets (10%/15%), and 10 questions per variant here versus 50 per cell in the real test, with a much shorter passage. Read this as \"does the direction look right,\" not a statistically significant result — see Advanced for the real Phase 8 findings at the actual pre-registered budgets.";

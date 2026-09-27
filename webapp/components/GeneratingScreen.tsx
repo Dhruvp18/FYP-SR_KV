@@ -13,9 +13,9 @@ export function GeneratingScreen() {
   return (
     <div className="mx-auto flex h-full w-full max-w-2xl min-h-0 flex-col justify-center gap-3 px-6">
       <div className="mb-1 text-center">
-        <p className="text-[14px] text-text">Running all five methods on your sentence, live…</p>
+        <p className="text-[14px] text-text">Running all five methods on the same question, live…</p>
         <p className="text-[11.5px] text-text-faint">
-          step {step} of up to {maxNewTokens}
+          passage → question → answering (up to {maxNewTokens} tokens) — step {step}
         </p>
       </div>
 

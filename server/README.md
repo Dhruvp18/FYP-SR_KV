@@ -2,14 +2,17 @@
 
 FastAPI + WebSocket backend for the live demo in `../webapp/`. Runs the
 repo's real `src/caches/*` classes against a real Qwen2.5-0.5B-Instruct model
-on CPU (no GPU required), interleaving all 5 method lanes token by token.
+on CPU (no GPU required), answering a real question from the project's own
+eval task (`eval/gist_mcq.py`) with all 5 method lanes interleaved token by
+token, two-pass - the passage compresses with zero knowledge the question
+exists, exactly like the real eval.
 
 ## Run it
 
 ```bash
 # from the repo root, with the project venv active
-make demo-backend-test   # CLI smoke test, tiny random model, no downloads, ~1s
-make demo-backend        # the real server on :8000 (downloads qwen2.5-0.5b once, ~1GB)
+make demo-backend-test   # CLI smoke test, tiny random model + synthetic corpus, no downloads, ~1s
+make demo-backend        # the real server on :8000 (downloads qwen2.5-0.5b + Paul Graham essays once)
 ```
 
 Then in a second terminal: `make demo-web` (or `cd webapp && npm run dev`),
@@ -26,50 +29,71 @@ trusting what you see in the browser - if it's missing, restart manually.
 ## What's real, what's simplified
 
 - **Real**: the cache classes (`SRKVCache`, `StreamingLLMCache`), the
-  `make_cache` factory, `attach_cache`, the model, greedy decoding with the
-  model's actual `repetition_penalty`. Every stat shown
+  `make_cache` factory, `attach_cache`, the model, the eval task itself
+  (`eval.gist_mcq.build_samples`/`score`), greedy decoding with the model's
+  actual `repetition_penalty`. Every stat shown
   (`get_stats()`/`check_conservation()`) is read straight off the cache, never
-  recomputed.
+  recomputed. The two-pass protocol (`decode_loop.py::run_gist`) mirrors
+  `eval.gist_mcq.measure()`'s own discipline exactly, including its
+  `cache.t_now + 1` position-continuation fix - validated against it directly
+  (see Tests, below).
 - **Simplified for the demo**: generation is greedy (`do_sample=False`) for
-  determinism, and only 5 of the 9 `configs/defaults.yaml` scoring knobs are
-  exposed to the UI (`budget`) — the rest are fixed at the real experiment
-  defaults, not hand-tuned for the demo.
+  determinism, the passage is much shorter than real Phase 8 runs
+  (`server/config.py`'s `GIST_CONTEXT_LEN_*`, 200-800 vs. 2048-16384) to stay
+  in the tens-of-seconds range on CPU, and only 3 of the 9
+  `configs/defaults.yaml` scoring knobs are exposed to the UI (`budget`,
+  passage length, and which variant) - the rest are fixed at the real
+  experiment defaults, not hand-tuned for the demo.
 - **One run at a time**: `src/attn_patch.py`'s `_ACTIVE_CACHE` is a
   module-level global by design (single-threaded, batch-1 — see its own
-  docstring). `model_singleton.RUN_LOCK` enforces this; a second `start_run`
-  while one is in flight gets an immediate `error`, not a queue.
+  docstring). `model_singleton.RUN_LOCK` enforces this; a second
+  `start_gist_run` while one is in flight gets an immediate `error`, not a
+  queue.
 
 ## Files
 
-- `decode_loop.py` — the manual, interleaved, round-robin multi-lane decode
-  loop (replaces `model.generate()`, which has no way to yield control
-  mid-generation without a custom streamer).
-- `telemetry.py` — reconstructs which original tokens got folded into which
-  centroid, by diffing the cache's own public bookkeeping across steps. Never
-  guesses at scoring; only observes.
-- `lanes.py` — the 5 lane configs, built through `src.caches.make_cache`.
+- `gist_source.py` — thin wrapper around `eval.gist_mcq.build_samples`,
+  picking a fresh real question each request.
+- `decode_loop.py` — `run_gist()`, the manual, interleaved, round-robin,
+  two-pass multi-lane decode loop (replaces `model.generate()`, which has no
+  way to yield control mid-generation without a custom streamer, and runs
+  the passage and question as one combined pass, which `eval/gist_mcq.py`'s
+  own docstring explains lets compression "see" the question before it
+  compresses - defeating the task).
+- `telemetry.py` — derives which original tokens are currently individually
+  cached, folded into some centroid, or hard-evicted, from each cache's own
+  public bookkeeping. See its module docstring for why this is a structural
+  read (alive vs. not, plus whether the method clusters) rather than trying
+  to track which specific centroid absorbed which tokens - the latter isn't
+  reconstructable in general once `SRKVCache`'s default
+  `recluster_centroids=True` is accounted for.
+- `lanes.py` — the 5 lane configs, built through `src.caches.make_cache`,
+  plus `USES_CLUSTERING` (read from the real flags, for `telemetry.py`).
 - `ws_handler.py` / `app.py` / `protocol.py` — the WebSocket wiring.
 - `tools/decode_loop_cli.py` — standalone validation script; also useful for
-  a quick non-browser check of a prompt (`--real` for the actual model).
+  a quick non-browser check (`--real` for the actual model, `--variant`,
+  `--context_len`).
 - `tests/test_decode_loop.py` — the same checks as the CLI, as pytest
   (`pytest server/tests/`; not wired into the root `make test`, which is the
-  research suite proper).
+  research suite proper). Includes an oracle test against
+  `eval.gist_mcq.measure()` itself and a `score()`-agreement test.
 
 ## Known simplifications worth knowing about
 
-- `telemetry.py`'s centroid membership tracking assumes a plain token's
-  position never repeats and a centroid's position only drifts by roughly one
-  token-width per step — true of every method in this repo today. If a future
-  cache variant repositions a *plain* token, the diffing heuristic would need
-  the same is_centroid-aware fix that hard-eviction lanes needed (see the
-  comment in `telemetry.py`'s `diff()`).
 - `SRKVCacheBase`'s own default `min_budget_tokens` is 32 (a real research
   choice, protecting short sequences from being over-compressed). For demo
-  prompts in the 40-150 token range at 10-50% budget, `budget * prompt_len`
-  is routinely below 32, so that floor silently overrides the budget slider -
-  every compressed lane converges on exactly 32 regardless of what was
-  requested, which reads as "all four methods behave identically" when they
-  were never actually tested at the requested compression. `lanes.py`
-  overrides it to 8 for the demo only (`configs/defaults.yaml`, which real
-  experiments read, is untouched). If lanes still look identical at a low
-  budget, check the prompt is long enough that this floor isn't dominating.
+  passages in the 200-800 token range at 10-50% budget, `budget * passage_len`
+  can still land below 32, so that floor would silently override the budget
+  slider - every compressed lane converging on the same size regardless of
+  what was requested. `lanes.py` overrides it to 8 for the demo only
+  (`configs/defaults.yaml`, which real experiments read, is untouched). If
+  lanes still look identical at a low budget, check the passage is long
+  enough that this floor isn't dominating.
+- `telemetry.py` cannot report which *specific* centroid a given original
+  token is folded into - only whether it's folded into *some* centroid. This
+  is a structural limit of the real cache's own bookkeeping
+  (`positions`/`slot_weights`/`is_centroid` give per-slot counts, not
+  per-slot membership), sharpened by `recluster_centroids=True` meaning a
+  centroid isn't even a stable entity across steps in the first place (see
+  `telemetry.py`'s module docstring for the full reasoning and the earlier,
+  wrong approach it replaced).

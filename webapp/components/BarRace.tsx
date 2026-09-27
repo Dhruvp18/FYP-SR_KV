@@ -8,10 +8,11 @@ import { LANE_METHODS } from "@/lib/types";
 
 export function BarRace() {
   const lanes = useRunStore((s) => s.lanes);
-  const step = useRunStore((s) => s.step);
-  const promptTokens = useRunStore((s) => s.promptTokens);
 
-  const denom = Math.max(promptTokens + step, 1);
+  // The `full` lane never compresses, so its own cached count *is* the true
+  // sequence length seen so far - a more accurate denominator than
+  // reconstructing passage+question+decode counts by hand.
+  const denom = Math.max(lanes.full.stats.n_tokens_cached, 1);
 
   const rows = useMemo(
     () =>
