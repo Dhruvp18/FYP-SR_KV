@@ -26,12 +26,18 @@ NSHARDS ?= 1
         phase1 phase1-4bit phase2 phase3 phase4 phase4-scan freeze-rope \
         phase5 phase5-longbench phase5-recompress-probe phase6-sweep phase6-3b-scan phase6-3b phase7 \
         gate1 gate2 gate3 gate4 gate5 gate6 gate7 \
-        check-complete check-ablation plots report_artifacts clean-figures
+        check-complete check-ablation plots report_artifacts clean-figures \
+        demo-backend-test demo-backend demo-web
 
 help:
 	@echo "Local (no GPU):"
 	@echo "  make test              - full CPU test suite, no downloads"
 	@echo "  make configs           - regenerate configs/*.yaml"
+	@echo ""
+	@echo "Live demo (webapp/ + server/ — see server/README.md):"
+	@echo "  make demo-backend-test - CLI smoke test of the live decode loop, tiny model, no downloads"
+	@echo "  make demo-backend      - run the FastAPI/WebSocket backend on :8000 (downloads qwen2.5-0.5b once)"
+	@echo "  make demo-web          - run the Next.js dashboard on :3000 (run demo-backend first, separate terminal)"
 	@echo ""
 	@echo "GPU phases (run on Kaggle):"
 	@echo "  make phase1            - harness sanity on a real model   -> make gate1"
@@ -57,6 +63,16 @@ test:
 
 configs:
 	$(PY) scripts/gen_configs.py
+
+# --- Live demo (server/ + webapp/) ------------------------------------------
+demo-backend-test:
+	$(PY) server/tools/decode_loop_cli.py
+
+demo-backend:
+	$(PY) -m uvicorn server.app:app --port 8000
+
+demo-web:
+	cd webapp && npm run dev
 
 # --- Phase 1: is the harness itself trustworthy? ---------------------------
 # A 1.5B instruct model retrieves a magic number from 512 tokens without
