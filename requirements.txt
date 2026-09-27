@@ -16,3 +16,8 @@ tqdm
 pytest
 # optional experiment tracking; eval/run.py works without it
 wandb
+
+# live demo backend (server/) — not used by any research/eval code
+fastapi
+uvicorn[standard]
+websockets
