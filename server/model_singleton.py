@@ -13,6 +13,8 @@ from __future__ import annotations
 import asyncio
 import logging
 
+import torch
+
 from src.models import load_model
 
 from .config import MODEL_ALIAS
@@ -30,7 +32,12 @@ def get_model():
     or during startup, never on the asyncio event loop thread)."""
     global _model, _tokenizer
     if _model is None:
-        logger.info("Loading %s on CPU (allow_cpu=True: explicit local-demo choice, no GPU present)", MODEL_ALIAS)
+        # allow_cpu=True lets this run on a CPU-only local machine (the usual
+        # case); load_model still puts it on GPU automatically whenever one
+        # is visible (e.g. a Kaggle GPU kernel - see KAGGLE.md's "live demo"
+        # section), no code change needed either way.
+        device = "GPU" if torch.cuda.is_available() else "CPU"
+        logger.info("Loading %s on %s (allow_cpu=True: local demo tolerates no GPU)", MODEL_ALIAS, device)
         _model, _tokenizer = load_model(MODEL_ALIAS, allow_cpu=True)
     return _model, _tokenizer
 

@@ -19,6 +19,7 @@ published `pg` number, they are not the same task.
 
 from __future__ import annotations
 
+import functools
 import random
 from dataclasses import dataclass, field
 
@@ -81,10 +82,22 @@ def _filler_text(rng: random.Random, min_chars: int) -> str:
     return " ".join(out)
 
 
-def _load_pg_text(min_chars: int) -> str:
+@functools.lru_cache(maxsize=1)
+def _load_pg_dataset():
+    # `load_dataset` re-resolves the dataset's revision/README/file-tree
+    # metadata over the network on every call, even once the parquet itself
+    # is disk-cached - harmless for a one-off eval run, but murders a batch
+    # of many samples (e.g. server/batch.py's live demo) with dozens of
+    # redundant HTTP round trips. The dataset is loaded with no shuffle and
+    # no per-call arguments, so it's identical every time - safe to memoize
+    # for the life of the process.
     from datasets import load_dataset
 
-    ds = load_dataset("sgoel9/paul_graham_essays", split="train")
+    return load_dataset("sgoel9/paul_graham_essays", split="train")
+
+
+def _load_pg_text(min_chars: int) -> str:
+    ds = _load_pg_dataset()
     chunks, total = [], 0
     for row in ds:
         text = row.get("text") or row.get("essay") or ""

@@ -271,7 +271,20 @@ before the deadline is a single line. Figures land in `figures/`.
 | Accuracy is 0 everywhere, all methods including `full` | The harness, not the method. Run the Phase 1 sanity check at 512 tokens. |
 | All three RoPE modes score the same at chance | Bug in clustering or centroid construction, upstream of position assignment. Fix before Phase 5. |
 
-## 4. Quota budgeting
+## 4. Live demo (Cache Lens) on Kaggle GPU
+
+The eval workflow above is batch (`eval/run.py`, detached kernel pushes). The
+live browser demo (`server/` + `webapp/`) is a different, *interactive* thing
+- see `scripts/kaggle_demo_server.py`'s module docstring for the full setup
+(GPU + Internet On, an ngrok authtoken as a Kaggle Secret, run the script from
+a notebook cell and leave the tab open). It prints a `wss://...` URL; paste it
+into `webapp/.env.local` as `NEXT_PUBLIC_WS_URL` locally and restart
+`npm run dev` - nothing else changes, the frontend and CORS setup are already
+host-agnostic. No code in `server/` needs to change to use the GPU either:
+`src/models.py::load_model` already places the model on CUDA automatically
+whenever `torch.cuda.is_available()`.
+
+## 5. Quota budgeting
 
 Rough guide for planning against ~30 GPU-hours/week:
 
