@@ -1,0 +1,9 @@
+{
+  "pass": true,
+  "full_accuracy": 1.0,
+  "full_by_variant": {
+    "current_request": 1.0,
+    "old_constraint": 1.0
+  },
+  "records": 90
+}

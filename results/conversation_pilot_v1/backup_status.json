@@ -1,0 +1,8 @@
+{
+  "last_success_utc": "2026-09-26T16:24:53Z",
+  "pilot_answers": 900,
+  "pipeline": {
+    "stage": "analysis",
+    "state": "complete"
+  }
+}

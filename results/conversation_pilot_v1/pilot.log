@@ -1,0 +1,288 @@
+Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.
+Loading weights:   0%|          | 0/338 [00:00<?, ?it/s]Loading weights:   0%|          | 1/338 [00:00<04:06,  1.37it/s]Loading weights:  33%|███▎      | 111/338 [00:00<00:01, 177.77it/s]Loading weights:  50%|█████     | 170/338 [00:01<00:00, 201.31it/s]Loading weights:  63%|██████▎   | 213/338 [00:01<00:00, 198.25it/s]Loading weights:  73%|███████▎  | 247/338 [00:01<00:00, 192.39it/s]Loading weights:  81%|████████▏ | 275/338 [00:01<00:00, 202.39it/s]Loading weights:  90%|████████▉ | 303/338 [00:01<00:00, 197.70it/s]Loading weights:  97%|█████████▋| 329/338 [00:01<00:00, 209.08it/s]Loading weights: 100%|██████████| 338/338 [00:01<00:00, 180.74it/s]
+[pilot] 25/900 answers; full b=1.0; elapsed=9.3s
+[pilot] 30/900 answers; full b=1.0; elapsed=24.7s
+[pilot] 35/900 answers; full b=1.0; elapsed=39.8s
+[pilot] 40/900 answers; full b=1.0; elapsed=55.6s
+[pilot] 45/900 answers; full b=1.0; elapsed=71.5s
+[pilot] 50/900 answers; full b=1.0; elapsed=88.2s
+[pilot] 55/900 answers; full b=1.0; elapsed=105.2s
+[pilot] 60/900 answers; full b=1.0; elapsed=123.4s
+[pilot] 65/900 answers; full b=1.0; elapsed=141.5s
+[pilot] 70/900 answers; full b=1.0; elapsed=159.5s
+[pilot] 75/900 answers; full b=1.0; elapsed=176.9s
+[pilot] 80/900 answers; full b=1.0; elapsed=194.8s
+[pilot] 85/900 answers; full b=1.0; elapsed=212.5s
+[pilot] 90/900 answers; full b=1.0; elapsed=230.1s
+[pilot] 95/900 answers; full b=1.0; elapsed=247.6s
+[pilot] 100/900 answers; full b=1.0; elapsed=265.6s
+[pilot] 105/900 answers; streaming_llm b=0.1; elapsed=282.7s
+[pilot] 110/900 answers; streaming_llm b=0.1; elapsed=301.2s
+[pilot] 115/900 answers; streaming_llm b=0.1; elapsed=319.0s
+[pilot] 120/900 answers; streaming_llm b=0.1; elapsed=337.6s
+[pilot] 125/900 answers; streaming_llm b=0.1; elapsed=355.7s
+[pilot] 130/900 answers; streaming_llm b=0.1; elapsed=374.3s
+[pilot] 135/900 answers; streaming_llm b=0.1; elapsed=392.5s
+[pilot] 140/900 answers; streaming_llm b=0.1; elapsed=410.7s
+[pilot] 145/900 answers; streaming_llm b=0.1; elapsed=428.9s
+[pilot] 150/900 answers; streaming_llm b=0.1; elapsed=447.4s
+[pilot] 155/900 answers; streaming_llm b=0.1; elapsed=465.6s
+[pilot] 160/900 answers; streaming_llm b=0.1; elapsed=484.2s
+[pilot] 165/900 answers; streaming_llm b=0.1; elapsed=502.3s
+[pilot] 170/900 answers; streaming_llm b=0.1; elapsed=520.9s
+[pilot] 175/900 answers; streaming_llm b=0.1; elapsed=539.1s
+[pilot] 180/900 answers; streaming_llm b=0.1; elapsed=558.0s
+[pilot] 185/900 answers; streaming_llm b=0.1; elapsed=576.4s
+[pilot] 190/900 answers; streaming_llm b=0.1; elapsed=594.8s
+[pilot] 195/900 answers; streaming_llm b=0.1; elapsed=613.0s
+[pilot] 200/900 answers; streaming_llm b=0.1; elapsed=631.8s
+[pilot] 205/900 answers; streaming_llm b=0.2; elapsed=649.0s
+[pilot] 210/900 answers; streaming_llm b=0.2; elapsed=667.1s
+[pilot] 215/900 answers; streaming_llm b=0.2; elapsed=685.1s
+[pilot] 220/900 answers; streaming_llm b=0.2; elapsed=702.6s
+[pilot] 225/900 answers; streaming_llm b=0.2; elapsed=720.3s
+[pilot] 230/900 answers; streaming_llm b=0.2; elapsed=738.2s
+[pilot] 235/900 answers; streaming_llm b=0.2; elapsed=756.3s
+[pilot] 240/900 answers; streaming_llm b=0.2; elapsed=774.4s
+[pilot] 245/900 answers; streaming_llm b=0.2; elapsed=792.1s
+[pilot] 250/900 answers; streaming_llm b=0.2; elapsed=810.9s
+[pilot] 255/900 answers; streaming_llm b=0.2; elapsed=829.4s
+[pilot] 260/900 answers; streaming_llm b=0.2; elapsed=847.5s
+[pilot] 265/900 answers; streaming_llm b=0.2; elapsed=865.9s
+[pilot] 270/900 answers; streaming_llm b=0.2; elapsed=884.8s
+[pilot] 275/900 answers; streaming_llm b=0.2; elapsed=903.3s
+[pilot] 280/900 answers; streaming_llm b=0.2; elapsed=922.2s
+[pilot] 285/900 answers; streaming_llm b=0.2; elapsed=940.1s
+[pilot] 290/900 answers; streaming_llm b=0.2; elapsed=959.1s
+[pilot] 295/900 answers; streaming_llm b=0.2; elapsed=977.3s
+[pilot] 300/900 answers; streaming_llm b=0.2; elapsed=995.3s
+[pilot] 305/900 answers; snapkv_unified b=0.1; elapsed=1014.6s
+[pilot] 310/900 answers; snapkv_unified b=0.1; elapsed=1033.9s
+[pilot] 315/900 answers; snapkv_unified b=0.1; elapsed=1053.6s
+[pilot] 320/900 answers; snapkv_unified b=0.1; elapsed=1073.7s
+[pilot] 325/900 answers; snapkv_unified b=0.1; elapsed=1092.7s
+[pilot] 330/900 answers; snapkv_unified b=0.1; elapsed=1112.9s
+[pilot] 335/900 answers; snapkv_unified b=0.1; elapsed=1132.2s
+[pilot] 340/900 answers; snapkv_unified b=0.1; elapsed=1152.6s
+[pilot] 345/900 answers; snapkv_unified b=0.1; elapsed=1172.4s
+[pilot] 350/900 answers; snapkv_unified b=0.1; elapsed=1192.7s
+[pilot] 355/900 answers; snapkv_unified b=0.1; elapsed=1212.4s
+[pilot] 360/900 answers; snapkv_unified b=0.1; elapsed=1232.8s
+[pilot] 365/900 answers; snapkv_unified b=0.1; elapsed=1252.5s
+[pilot] 370/900 answers; snapkv_unified b=0.1; elapsed=1272.8s
+[pilot] 375/900 answers; snapkv_unified b=0.1; elapsed=1292.6s
+[pilot] 380/900 answers; snapkv_unified b=0.1; elapsed=1312.7s
+[pilot] 385/900 answers; snapkv_unified b=0.1; elapsed=1332.3s
+[pilot] 390/900 answers; snapkv_unified b=0.1; elapsed=1352.7s
+[pilot] 395/900 answers; snapkv_unified b=0.1; elapsed=1372.3s
+[pilot] 400/900 answers; snapkv_unified b=0.1; elapsed=1392.3s
+[pilot] 405/900 answers; snapkv_unified b=0.2; elapsed=1411.2s
+[pilot] 410/900 answers; snapkv_unified b=0.2; elapsed=1430.9s
+[pilot] 415/900 answers; snapkv_unified b=0.2; elapsed=1450.7s
+[pilot] 420/900 answers; snapkv_unified b=0.2; elapsed=1471.0s
+[pilot] 425/900 answers; snapkv_unified b=0.2; elapsed=1490.7s
+[pilot] 430/900 answers; snapkv_unified b=0.2; elapsed=1510.8s
+[pilot] 435/900 answers; snapkv_unified b=0.2; elapsed=1530.7s
+[pilot] 440/900 answers; snapkv_unified b=0.2; elapsed=1550.5s
+[pilot] 445/900 answers; snapkv_unified b=0.2; elapsed=1569.9s
+[pilot] 450/900 answers; snapkv_unified b=0.2; elapsed=1589.7s
+[pilot] 455/900 answers; snapkv_unified b=0.2; elapsed=1608.9s
+[pilot] 460/900 answers; snapkv_unified b=0.2; elapsed=1629.1s
+[pilot] 465/900 answers; snapkv_unified b=0.2; elapsed=1649.1s
+[pilot] 470/900 answers; snapkv_unified b=0.2; elapsed=1669.6s
+[pilot] 475/900 answers; snapkv_unified b=0.2; elapsed=1688.9s
+[pilot] 480/900 answers; snapkv_unified b=0.2; elapsed=1709.1s
+[pilot] 485/900 answers; snapkv_unified b=0.2; elapsed=1728.5s
+[pilot] 490/900 answers; snapkv_unified b=0.2; elapsed=1748.7s
+[pilot] 495/900 answers; snapkv_unified b=0.2; elapsed=1768.0s
+[pilot] 500/900 answers; snapkv_unified b=0.2; elapsed=1788.0s
+[pilot] 505/900 answers; recency_hard_evict b=0.1; elapsed=1806.7s
+[pilot] 510/900 answers; recency_hard_evict b=0.1; elapsed=1826.7s
+[pilot] 515/900 answers; recency_hard_evict b=0.1; elapsed=1846.4s
+[pilot] 520/900 answers; recency_hard_evict b=0.1; elapsed=1865.0s
+[pilot] 525/900 answers; recency_hard_evict b=0.1; elapsed=1883.7s
+[pilot] 530/900 answers; recency_hard_evict b=0.1; elapsed=1903.8s
+[pilot] 535/900 answers; recency_hard_evict b=0.1; elapsed=1922.4s
+[pilot] 540/900 answers; recency_hard_evict b=0.1; elapsed=1941.7s
+[pilot] 545/900 answers; recency_hard_evict b=0.1; elapsed=1959.6s
+[pilot] 550/900 answers; recency_hard_evict b=0.1; elapsed=1979.7s
+[pilot] 555/900 answers; recency_hard_evict b=0.1; elapsed=1997.5s
+[pilot] 560/900 answers; recency_hard_evict b=0.1; elapsed=2015.7s
+[pilot] 565/900 answers; recency_hard_evict b=0.1; elapsed=2035.2s
+[pilot] 570/900 answers; recency_hard_evict b=0.1; elapsed=2055.4s
+[pilot] 575/900 answers; recency_hard_evict b=0.1; elapsed=2074.7s
+[pilot] 580/900 answers; recency_hard_evict b=0.1; elapsed=2094.9s
+[pilot] 585/900 answers; recency_hard_evict b=0.1; elapsed=2114.5s
+[pilot] 590/900 answers; recency_hard_evict b=0.1; elapsed=2134.6s
+[pilot] 595/900 answers; recency_hard_evict b=0.1; elapsed=2153.7s
+[pilot] 600/900 answers; recency_hard_evict b=0.1; elapsed=2173.8s
+[pilot] 605/900 answers; recency_hard_evict b=0.2; elapsed=2193.0s
+[pilot] 610/900 answers; recency_hard_evict b=0.2; elapsed=2212.4s
+[pilot] 615/900 answers; recency_hard_evict b=0.2; elapsed=2231.8s
+[pilot] 620/900 answers; recency_hard_evict b=0.2; elapsed=2251.8s
+[pilot] 625/900 answers; recency_hard_evict b=0.2; elapsed=2270.6s
+[pilot] 630/900 answers; recency_hard_evict b=0.2; elapsed=2289.7s
+[pilot] 635/900 answers; recency_hard_evict b=0.2; elapsed=2308.3s
+[pilot] 640/900 answers; recency_hard_evict b=0.2; elapsed=2328.4s
+[pilot] 645/900 answers; recency_hard_evict b=0.2; elapsed=2346.9s
+[pilot] 650/900 answers; recency_hard_evict b=0.2; elapsed=2367.1s
+[pilot] 655/900 answers; recency_hard_evict b=0.2; elapsed=2386.5s
+[pilot] 660/900 answers; recency_hard_evict b=0.2; elapsed=2404.6s
+[pilot] 665/900 answers; recency_hard_evict b=0.2; elapsed=2423.9s
+[pilot] 670/900 answers; recency_hard_evict b=0.2; elapsed=2444.1s
+[pilot] 675/900 answers; recency_hard_evict b=0.2; elapsed=2463.3s
+[pilot] 680/900 answers; recency_hard_evict b=0.2; elapsed=2483.4s
+[pilot] 685/900 answers; recency_hard_evict b=0.2; elapsed=2502.9s
+[pilot] 690/900 answers; recency_hard_evict b=0.2; elapsed=2522.0s
+[pilot] 695/900 answers; recency_hard_evict b=0.2; elapsed=2541.4s
+[pilot] 700/900 answers; recency_hard_evict b=0.2; elapsed=2560.6s
+[pilot] 705/900 answers; sr_kv b=0.1; elapsed=2580.8s
+[pilot] 710/900 answers; sr_kv b=0.1; elapsed=2605.2s
+[pilot] 715/900 answers; sr_kv b=0.1; elapsed=2628.8s
+[pilot] 720/900 answers; sr_kv b=0.1; elapsed=2651.9s
+[pilot] 725/900 answers; sr_kv b=0.1; elapsed=2673.9s
+[pilot] 730/900 answers; sr_kv b=0.1; elapsed=2698.7s
+[pilot] 735/900 answers; sr_kv b=0.1; elapsed=2720.6s
+[pilot] 740/900 answers; sr_kv b=0.1; elapsed=2745.3s
+[pilot] 745/900 answers; sr_kv b=0.1; elapsed=2767.3s
+[pilot] 750/900 answers; sr_kv b=0.1; elapsed=2791.9s
+[pilot] 755/900 answers; sr_kv b=0.1; elapsed=2813.7s
+[pilot] 760/900 answers; sr_kv b=0.1; elapsed=2834.5s
+[pilot] 765/900 answers; sr_kv b=0.1; elapsed=2857.9s
+[pilot] 770/900 answers; sr_kv b=0.1; elapsed=2882.5s
+[pilot] 775/900 answers; sr_kv b=0.1; elapsed=2906.2s
+[pilot] 780/900 answers; sr_kv b=0.1; elapsed=2931.0s
+[pilot] 785/900 answers; sr_kv b=0.1; elapsed=2954.8s
+[pilot] 790/900 answers; sr_kv b=0.1; elapsed=2979.3s
+[pilot] 795/900 answers; sr_kv b=0.1; elapsed=3002.4s
+[pilot] 800/900 answers; sr_kv b=0.1; elapsed=3026.8s
+[pilot] 805/900 answers; sr_kv b=0.2; elapsed=3050.3s
+[pilot] 810/900 answers; sr_kv b=0.2; elapsed=3071.8s
+[pilot] 815/900 answers; sr_kv b=0.2; elapsed=3095.6s
+[pilot] 820/900 answers; sr_kv b=0.2; elapsed=3119.9s
+[pilot] 825/900 answers; sr_kv b=0.2; elapsed=3141.4s
+[pilot] 830/900 answers; sr_kv b=0.2; elapsed=3165.7s
+[pilot] 835/900 answers; sr_kv b=0.2; elapsed=3188.3s
+[pilot] 840/900 answers; sr_kv b=0.2; elapsed=3212.4s
+[pilot] 845/900 answers; sr_kv b=0.2; elapsed=3235.4s
+[pilot] 850/900 answers; sr_kv b=0.2; elapsed=3260.3s
+[pilot] 855/900 answers; sr_kv b=0.2; elapsed=3283.9s
+[pilot] 860/900 answers; sr_kv b=0.2; elapsed=3306.8s
+[pilot] 865/900 answers; sr_kv b=0.2; elapsed=3330.7s
+[pilot] 870/900 answers; sr_kv b=0.2; elapsed=3355.5s
+[pilot] 875/900 answers; sr_kv b=0.2; elapsed=3379.0s
+[pilot] 880/900 answers; sr_kv b=0.2; elapsed=3403.7s
+[pilot] 885/900 answers; sr_kv b=0.2; elapsed=3427.0s
+[pilot] 890/900 answers; sr_kv b=0.2; elapsed=3451.1s
+[pilot] 895/900 answers; sr_kv b=0.2; elapsed=3473.7s
+[pilot] 900/900 answers; sr_kv b=0.2; elapsed=3497.3s
+{
+  "full/b1.0/current_request": {
+    "n": 50,
+    "accuracy": 1.0,
+    "mean_seconds": 2.9692531205799946,
+    "peak_gpu_gib": 4.917342185974121
+  },
+  "full/b1.0/old_constraint": {
+    "n": 50,
+    "accuracy": 1.0,
+    "mean_seconds": 3.2657572685200127,
+    "peak_gpu_gib": 4.917342662811279
+  },
+  "streaming_llm/b0.1/current_request": {
+    "n": 50,
+    "accuracy": 0.22,
+    "mean_seconds": 3.236113402420019,
+    "peak_gpu_gib": 4.8202033042907715
+  },
+  "streaming_llm/b0.1/old_constraint": {
+    "n": 50,
+    "accuracy": 0.32,
+    "mean_seconds": 3.5905779802399955,
+    "peak_gpu_gib": 4.82020378112793
+  },
+  "streaming_llm/b0.2/current_request": {
+    "n": 50,
+    "accuracy": 0.48,
+    "mean_seconds": 3.245723962580005,
+    "peak_gpu_gib": 4.830992221832275
+  },
+  "streaming_llm/b0.2/old_constraint": {
+    "n": 50,
+    "accuracy": 0.32,
+    "mean_seconds": 3.516441151240019,
+    "peak_gpu_gib": 4.830992698669434
+  },
+  "snapkv_unified/b0.1/current_request": {
+    "n": 50,
+    "accuracy": 0.6,
+    "mean_seconds": 3.4541313856799936,
+    "peak_gpu_gib": 5.138811111450195
+  },
+  "snapkv_unified/b0.1/old_constraint": {
+    "n": 50,
+    "accuracy": 0.76,
+    "mean_seconds": 3.9828729373999976,
+    "peak_gpu_gib": 5.1388115882873535
+  },
+  "snapkv_unified/b0.2/current_request": {
+    "n": 50,
+    "accuracy": 0.76,
+    "mean_seconds": 3.430549989179972,
+    "peak_gpu_gib": 5.149600028991699
+  },
+  "snapkv_unified/b0.2/old_constraint": {
+    "n": 50,
+    "accuracy": 0.94,
+    "mean_seconds": 3.96816035910002,
+    "peak_gpu_gib": 5.149600505828857
+  },
+  "recency_hard_evict/b0.1/current_request": {
+    "n": 50,
+    "accuracy": 0.52,
+    "mean_seconds": 3.4325249220400202,
+    "peak_gpu_gib": 5.138811111450195
+  },
+  "recency_hard_evict/b0.1/old_constraint": {
+    "n": 50,
+    "accuracy": 0.4,
+    "mean_seconds": 3.7964311475199883,
+    "peak_gpu_gib": 5.1388115882873535
+  },
+  "recency_hard_evict/b0.2/current_request": {
+    "n": 50,
+    "accuracy": 0.66,
+    "mean_seconds": 3.411772363179971,
+    "peak_gpu_gib": 5.149600028991699
+  },
+  "recency_hard_evict/b0.2/old_constraint": {
+    "n": 50,
+    "accuracy": 0.58,
+    "mean_seconds": 3.827505658839964,
+    "peak_gpu_gib": 5.149600505828857
+  },
+  "sr_kv/b0.1/current_request": {
+    "n": 50,
+    "accuracy": 0.48,
+    "mean_seconds": 4.000396217400039,
+    "peak_gpu_gib": 5.138811111450195
+  },
+  "sr_kv/b0.1/old_constraint": {
+    "n": 50,
+    "accuracy": 0.42,
+    "mean_seconds": 4.8423529730599695,
+    "peak_gpu_gib": 5.1388115882873535
+  },
+  "sr_kv/b0.2/current_request": {
+    "n": 50,
+    "accuracy": 0.68,
+    "mean_seconds": 3.978940985320005,
+    "peak_gpu_gib": 5.149600028991699
+  },
+  "sr_kv/b0.2/old_constraint": {
+    "n": 50,
+    "accuracy": 0.78,
+    "mean_seconds": 4.95217027421998,
+    "peak_gpu_gib": 5.149600505828857
+  }
+}

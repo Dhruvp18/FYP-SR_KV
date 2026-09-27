@@ -338,6 +338,14 @@ def measure(model, tokenizer, sample: GistSample, cache, *,
         with attach_cache(model, cache):
             model(passage_ids, past_key_values=cache, use_cache=True,
                   attention_mask=torch.ones_like(passage_ids))
+            # Observe the state before the question can influence retention.
+            pre_question_stats = dict(cache.get_stats())
+            pre_question_conservation = bool(cache.check_conservation())
+            pre_question_budget = (int(cache.budget_tokens)
+                                   if cache.budget_tokens is not None else None)
+            pre_question_allocated = (
+                int(torch.cuda.memory_allocated(device)) if device.type == "cuda" else 0
+            )
             mask = torch.ones((1, cache.get_seq_length() + question_ids.shape[1]),
                                dtype=torch.long, device=device)
             # `generate()` starting fresh against an already-populated cache -
@@ -401,4 +409,10 @@ def measure(model, tokenizer, sample: GistSample, cache, *,
         "budget_used_pct_final": history[-1] if history else 100.0,
         "conservation_ok": bool(cache.check_conservation()),
         "cache_config": cache.config_dict(),
+        "pre_question_cache_stats": pre_question_stats,
+        "pre_question_conservation_ok": pre_question_conservation,
+        "pre_question_budget_tokens": pre_question_budget,
+        "pre_question_allocated_bytes": pre_question_allocated,
+        "passage_tokens": int(passage_ids.shape[1]),
+        "compression_seconds": sum(getattr(cache, "compress_times", [])),
     }

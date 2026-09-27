@@ -1,0 +1,113 @@
+Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.
+Loading weights:   0%|          | 0/338 [00:00<?, ?it/s]Loading weights:   0%|          | 1/338 [00:00<03:49,  1.47it/s]Loading weights:  26%|██▋       | 89/338 [00:00<00:01, 152.79it/s]Loading weights:  41%|████      | 139/338 [00:01<00:01, 166.14it/s]Loading weights:  52%|█████▏    | 175/338 [00:01<00:00, 172.38it/s]Loading weights:  60%|██████    | 204/338 [00:01<00:00, 191.19it/s]Loading weights:  69%|██████▉   | 233/338 [00:01<00:00, 185.79it/s]Loading weights:  79%|███████▉  | 267/338 [00:01<00:00, 193.64it/s]Loading weights:  86%|████████▋ | 292/338 [00:01<00:00, 189.07it/s]Loading weights:  93%|█████████▎| 315/338 [00:01<00:00, 196.06it/s]Loading weights: 100%|██████████| 338/338 [00:01<00:00, 171.95it/s]
+SANITY PASS {'full_accuracy': 1.0, 'full_by_variant': {'current_request': 1.0, 'old_constraint': 1.0}, 'records': 90}
+{
+  "full/b1.0/current_request": {
+    "n": 5,
+    "accuracy": 1.0,
+    "mean_seconds": 2.6227498219999688,
+    "peak_gpu_gib": 4.917342185974121
+  },
+  "full/b1.0/old_constraint": {
+    "n": 5,
+    "accuracy": 1.0,
+    "mean_seconds": 2.81932416919999,
+    "peak_gpu_gib": 4.917342662811279
+  },
+  "streaming_llm/b0.1/current_request": {
+    "n": 5,
+    "accuracy": 0.4,
+    "mean_seconds": 2.673236828000154,
+    "peak_gpu_gib": 4.8202033042907715
+  },
+  "streaming_llm/b0.1/old_constraint": {
+    "n": 5,
+    "accuracy": 0.2,
+    "mean_seconds": 2.990919355800088,
+    "peak_gpu_gib": 4.82020378112793
+  },
+  "streaming_llm/b0.2/current_request": {
+    "n": 5,
+    "accuracy": 0.6,
+    "mean_seconds": 2.6873293317999924,
+    "peak_gpu_gib": 4.830992221832275
+  },
+  "streaming_llm/b0.2/old_constraint": {
+    "n": 5,
+    "accuracy": 0.4,
+    "mean_seconds": 2.9360437117999028,
+    "peak_gpu_gib": 4.830992698669434
+  },
+  "snapkv_unified/b0.1/current_request": {
+    "n": 5,
+    "accuracy": 0.6,
+    "mean_seconds": 2.901653805600108,
+    "peak_gpu_gib": 5.138811111450195
+  },
+  "snapkv_unified/b0.1/old_constraint": {
+    "n": 5,
+    "accuracy": 1.0,
+    "mean_seconds": 3.470094228800008,
+    "peak_gpu_gib": 5.1388115882873535
+  },
+  "snapkv_unified/b0.2/current_request": {
+    "n": 5,
+    "accuracy": 1.0,
+    "mean_seconds": 3.0174432345999778,
+    "peak_gpu_gib": 5.149600028991699
+  },
+  "snapkv_unified/b0.2/old_constraint": {
+    "n": 5,
+    "accuracy": 1.0,
+    "mean_seconds": 3.5627833836000717,
+    "peak_gpu_gib": 5.149600505828857
+  },
+  "recency_hard_evict/b0.1/current_request": {
+    "n": 5,
+    "accuracy": 0.4,
+    "mean_seconds": 2.9650026884,
+    "peak_gpu_gib": 5.138811111450195
+  },
+  "recency_hard_evict/b0.1/old_constraint": {
+    "n": 5,
+    "accuracy": 0.4,
+    "mean_seconds": 3.3289854399999057,
+    "peak_gpu_gib": 5.1388115882873535
+  },
+  "recency_hard_evict/b0.2/current_request": {
+    "n": 5,
+    "accuracy": 0.8,
+    "mean_seconds": 3.002379008799926,
+    "peak_gpu_gib": 5.149600028991699
+  },
+  "recency_hard_evict/b0.2/old_constraint": {
+    "n": 5,
+    "accuracy": 0.8,
+    "mean_seconds": 3.3757040738000796,
+    "peak_gpu_gib": 5.149600505828857
+  },
+  "sr_kv/b0.1/current_request": {
+    "n": 5,
+    "accuracy": 0.4,
+    "mean_seconds": 3.6377786525999,
+    "peak_gpu_gib": 5.138811111450195
+  },
+  "sr_kv/b0.1/old_constraint": {
+    "n": 5,
+    "accuracy": 0.6,
+    "mean_seconds": 4.387156903399864,
+    "peak_gpu_gib": 5.1388115882873535
+  },
+  "sr_kv/b0.2/current_request": {
+    "n": 5,
+    "accuracy": 1.0,
+    "mean_seconds": 3.6847721627998906,
+    "peak_gpu_gib": 5.149600028991699
+  },
+  "sr_kv/b0.2/old_constraint": {
+    "n": 5,
+    "accuracy": 1.0,
+    "mean_seconds": 4.862643424800081,
+    "peak_gpu_gib": 5.149600505828857
+  }
+}
