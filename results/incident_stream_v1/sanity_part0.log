@@ -1,0 +1,38 @@
+Loading weights:   0%|          | 0/338 [00:00<?, ?it/s]Loading weights:   0%|          | 1/338 [00:01<06:53,  1.23s/it]Loading weights:  47%|████▋     | 159/338 [00:01<00:01, 159.89it/s]Loading weights:  68%|██████▊   | 229/338 [00:01<00:00, 177.21it/s]Loading weights:  82%|████████▏ | 277/338 [00:01<00:00, 179.57it/s]Loading weights:  93%|█████████▎| 314/338 [00:02<00:00, 181.74it/s]Loading weights: 100%|██████████| 338/338 [00:02<00:00, 150.46it/s]
+[sanity shard=0] saved=1 stream=0 method=full checkpoint=0
+[sanity shard=0] saved=2 stream=0 method=full checkpoint=1
+[sanity shard=0] saved=3 stream=0 method=full checkpoint=2
+[sanity shard=0] saved=4 stream=0 method=streaming_llm checkpoint=0
+[sanity shard=0] saved=5 stream=0 method=streaming_llm checkpoint=1
+[sanity shard=0] saved=6 stream=0 method=streaming_llm checkpoint=2
+[sanity shard=0] saved=7 stream=0 method=snapkv_unified checkpoint=0
+[sanity shard=0] saved=8 stream=0 method=snapkv_unified checkpoint=1
+[sanity shard=0] saved=9 stream=0 method=snapkv_unified checkpoint=2
+[sanity shard=0] saved=10 stream=0 method=recency_hard_evict checkpoint=0
+[sanity shard=0] saved=11 stream=0 method=recency_hard_evict checkpoint=1
+[sanity shard=0] saved=12 stream=0 method=recency_hard_evict checkpoint=2
+[sanity shard=0] saved=13 stream=0 method=centroid_merge checkpoint=0
+[sanity shard=0] saved=14 stream=0 method=centroid_merge checkpoint=1
+[sanity shard=0] saved=15 stream=0 method=centroid_merge checkpoint=2
+[sanity shard=0] saved=16 stream=0 method=sr_kv checkpoint=0
+[sanity shard=0] saved=17 stream=0 method=sr_kv checkpoint=1
+[sanity shard=0] saved=18 stream=0 method=sr_kv checkpoint=2
+[sanity shard=0] saved=19 stream=2 method=full checkpoint=0
+[sanity shard=0] saved=20 stream=2 method=full checkpoint=1
+[sanity shard=0] saved=21 stream=2 method=full checkpoint=2
+[sanity shard=0] saved=22 stream=2 method=streaming_llm checkpoint=0
+[sanity shard=0] saved=23 stream=2 method=streaming_llm checkpoint=1
+[sanity shard=0] saved=24 stream=2 method=streaming_llm checkpoint=2
+[sanity shard=0] saved=25 stream=2 method=snapkv_unified checkpoint=0
+[sanity shard=0] saved=26 stream=2 method=snapkv_unified checkpoint=1
+[sanity shard=0] saved=27 stream=2 method=snapkv_unified checkpoint=2
+[sanity shard=0] saved=28 stream=2 method=recency_hard_evict checkpoint=0
+[sanity shard=0] saved=29 stream=2 method=recency_hard_evict checkpoint=1
+[sanity shard=0] saved=30 stream=2 method=recency_hard_evict checkpoint=2
+[sanity shard=0] saved=31 stream=2 method=centroid_merge checkpoint=0
+[sanity shard=0] saved=32 stream=2 method=centroid_merge checkpoint=1
+[sanity shard=0] saved=33 stream=2 method=centroid_merge checkpoint=2
+[sanity shard=0] saved=34 stream=2 method=sr_kv checkpoint=0
+[sanity shard=0] saved=35 stream=2 method=sr_kv checkpoint=1
+[sanity shard=0] saved=36 stream=2 method=sr_kv checkpoint=2
+WORKER COMPLETE

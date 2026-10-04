@@ -71,4 +71,9 @@ def main():
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    try:
+        raise SystemExit(main())
+    except (requests.RequestException, websocket.WebSocketException) as exc:
+        # Full exception text/headers may contain the credential-bearing URL.
+        print(f"Session connection failed: {type(exc).__name__}; HTTP {getattr(exc, 'status_code', 'unknown')}", file=sys.stderr)
+        raise SystemExit(1)

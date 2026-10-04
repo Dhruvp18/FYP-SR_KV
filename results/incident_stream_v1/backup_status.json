@@ -1,0 +1,9 @@
+{
+  "last_success_utc": "2026-10-03T15:05:15Z",
+  "record_count": 0,
+  "pipeline": {
+    "stage": "sanity_analysis",
+    "state": "stopped",
+    "returncode": 2
+  }
+}

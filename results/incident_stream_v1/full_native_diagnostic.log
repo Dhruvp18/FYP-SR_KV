@@ -1,0 +1,13 @@
+Loading weights:   0%|          | 0/338 [00:00<?, ?it/s]Loading weights:   0%|          | 1/338 [00:00<03:16,  1.72it/s]Loading weights:  40%|████      | 136/338 [00:00<00:00, 252.66it/s]Loading weights:  59%|█████▊    | 198/338 [00:00<00:00, 265.19it/s]Loading weights:  72%|███████▏  | 245/338 [00:01<00:00, 267.27it/s]Loading weights:  84%|████████▍ | 284/338 [00:01<00:00, 274.88it/s]Loading weights:  95%|█████████▍| 320/338 [00:01<00:00, 275.54it/s]Loading weights: 100%|██████████| 338/338 [00:01<00:00, 243.49it/s]
+{"stream_id": 0, "checkpoint": 0, "expected": "database", "predicted": "database", "generated_text": "A) database: investigate database", "incremental_predicted": "database"}
+{"stream_id": 0, "checkpoint": 1, "expected": "payments", "predicted": "NONE", "generated_text": "E) NONE: no unresolved", "incremental_predicted": "NONE"}
+{"stream_id": 0, "checkpoint": 2, "expected": "auth", "predicted": "NONE", "generated_text": "E) NONE: no unresolved", "incremental_predicted": "NONE"}
+{"stream_id": 1, "checkpoint": 0, "expected": "queue", "predicted": "NONE", "generated_text": "E) NONE: no unresolved", "incremental_predicted": "NONE"}
+{"stream_id": 1, "checkpoint": 1, "expected": "database", "predicted": "NONE", "generated_text": "E) NONE: no unresolved", "incremental_predicted": "NONE"}
+{"stream_id": 1, "checkpoint": 2, "expected": "NONE", "predicted": "NONE", "generated_text": "E) NONE: no unresolved", "incremental_predicted": "NONE"}
+{"stream_id": 2, "checkpoint": 0, "expected": "payments", "predicted": "payments", "generated_text": "B) payments: investigate the", "incremental_predicted": "payments"}
+{"stream_id": 2, "checkpoint": 1, "expected": "NONE", "predicted": "NONE", "generated_text": "E) NONE: no unresolved", "incremental_predicted": "NONE"}
+{"stream_id": 2, "checkpoint": 2, "expected": "payments", "predicted": "payments", "generated_text": "B) Payments: investigate the", "incremental_predicted": "payments"}
+{"stream_id": 3, "checkpoint": 0, "expected": "database", "predicted": "NONE", "generated_text": "E) NONE: no unresolved", "incremental_predicted": "NONE"}
+{"stream_id": 3, "checkpoint": 1, "expected": "database", "predicted": "database", "generated_text": "A) database", "incremental_predicted": "database"}
+{"stream_id": 3, "checkpoint": 2, "expected": "queue", "predicted": "NONE", "generated_text": "E) NONE: no unresolved", "incremental_predicted": "NONE"}

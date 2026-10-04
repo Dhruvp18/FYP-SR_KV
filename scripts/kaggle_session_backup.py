@@ -16,11 +16,14 @@ def main():
     p.add_argument("--url-file", required=True)
     p.add_argument("--dest", default="results/conversation_pilot_v1")
     p.add_argument("--interval", type=int, default=60)
+    p.add_argument("--remote", default="srkv_conversation_pilot_v1/results/conversation_pilot_v1")
+    p.add_argument("--record-glob", default="pilot.jsonl")
+    p.add_argument("--expected-records", type=int, default=900)
     args = p.parse_args()
     base = Path(args.url_file).read_text().strip().rstrip("/")
     dest = Path(args.dest).resolve()
     dest.mkdir(parents=True, exist_ok=True)
-    remote = "srkv_conversation_pilot_v1/results/conversation_pilot_v1"
+    remote = args.remote
     session = requests.Session()
 
     def get(path):
@@ -57,12 +60,13 @@ def main():
                 tmp.write_bytes(raw)
                 tmp.replace(target)
             state = json.loads((dest / "pipeline_status.json").read_text())
-            pilot = dest / "pilot.jsonl"
-            n = len(pilot.read_bytes().splitlines()) if pilot.exists() else 0
-            print(f"{time.strftime('%H:%M:%S')} backed up {n}/900 pilot answers; {state}", flush=True)
+            n = sum(len(f.read_bytes().splitlines()) for f in dest.glob(args.record_glob))
+            print(f"{time.strftime('%H:%M:%S')} backed up {n}/{args.expected_records} answers; {state}", flush=True)
             (dest / "backup_status.json").write_text(json.dumps(
                 {"last_success_utc": time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime()),
-                 "pilot_answers": n, "pipeline": state}, indent=2))
+                 "record_count": n,
+                 **({"pilot_answers": n} if args.record_glob == "pilot.jsonl" else {}),
+                 "pipeline": state}, indent=2))
             if state.get("state") in ("complete", "stopped"):
                 return 0
         except (requests.RequestException, ValueError, RuntimeError, OSError) as exc:

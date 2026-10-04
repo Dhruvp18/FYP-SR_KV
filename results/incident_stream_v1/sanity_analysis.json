@@ -1,0 +1,209 @@
+{
+  "n_records": 72,
+  "n_streams": 4,
+  "summary": {
+    "full": {
+      "n": 12,
+      "accuracy": 0.5,
+      "macro_f1": 0.37333333333333335,
+      "missed_alert_rate": 0.6,
+      "false_alert_rate": 0.0,
+      "wrong_service_rate": 0.0,
+      "invalid_rate": 0.0,
+      "per_checkpoint": {
+        "0": 0.5,
+        "1": 0.5,
+        "2": 0.5
+      },
+      "per_scenario": {
+        "handoff": 0.3333333333333333,
+        "persistent": 0.3333333333333333,
+        "recovery": 0.3333333333333333,
+        "recurrence": 1.0
+      },
+      "mean_ingest_seconds": 0.6397748580000098,
+      "mean_probe_seconds": 0.3728027695833589,
+      "peak_gpu_gib": 3.3383522033691406,
+      "max_retained_kv_mib": 166.87890625
+    },
+    "streaming_llm": {
+      "n": 12,
+      "accuracy": 0.25,
+      "macro_f1": 0.16153846153846155,
+      "missed_alert_rate": 0.9,
+      "false_alert_rate": 0.0,
+      "wrong_service_rate": 0.0,
+      "invalid_rate": 0.0,
+      "per_checkpoint": {
+        "0": 0.0,
+        "1": 0.25,
+        "2": 0.5
+      },
+      "per_scenario": {
+        "handoff": 0.0,
+        "persistent": 0.0,
+        "recovery": 0.3333333333333333,
+        "recurrence": 0.6666666666666666
+      },
+      "mean_ingest_seconds": 0.5739227805833025,
+      "mean_probe_seconds": 0.36062481941670893,
+      "peak_gpu_gib": 2.9231114387512207,
+      "max_retained_kv_mib": 14.0
+    },
+    "snapkv_unified": {
+      "n": 12,
+      "accuracy": 0.25,
+      "macro_f1": 0.16153846153846155,
+      "missed_alert_rate": 0.9,
+      "false_alert_rate": 0.0,
+      "wrong_service_rate": 0.0,
+      "invalid_rate": 0.0,
+      "per_checkpoint": {
+        "0": 0.0,
+        "1": 0.25,
+        "2": 0.5
+      },
+      "per_scenario": {
+        "handoff": 0.0,
+        "persistent": 0.0,
+        "recovery": 0.3333333333333333,
+        "recurrence": 0.6666666666666666
+      },
+      "mean_ingest_seconds": 0.7081472148333129,
+      "mean_probe_seconds": 0.48545645108322333,
+      "peak_gpu_gib": 2.956294059753418,
+      "max_retained_kv_mib": 14.0
+    },
+    "recency_hard_evict": {
+      "n": 12,
+      "accuracy": 0.4166666666666667,
+      "macro_f1": 0.3127272727272728,
+      "missed_alert_rate": 0.7,
+      "false_alert_rate": 0.0,
+      "wrong_service_rate": 0.0,
+      "invalid_rate": 0.0,
+      "per_checkpoint": {
+        "0": 0.5,
+        "1": 0.25,
+        "2": 0.5
+      },
+      "per_scenario": {
+        "handoff": 0.0,
+        "persistent": 0.3333333333333333,
+        "recovery": 0.3333333333333333,
+        "recurrence": 1.0
+      },
+      "mean_ingest_seconds": 0.7334514846666783,
+      "mean_probe_seconds": 0.4659954840833507,
+      "peak_gpu_gib": 2.956294059753418,
+      "max_retained_kv_mib": 14.0
+    },
+    "centroid_merge": {
+      "n": 12,
+      "accuracy": 0.3333333333333333,
+      "macro_f1": 0.29999999999999993,
+      "missed_alert_rate": 0.8,
+      "false_alert_rate": 0.0,
+      "wrong_service_rate": 0.0,
+      "invalid_rate": 0.0,
+      "per_checkpoint": {
+        "0": 0.25,
+        "1": 0.25,
+        "2": 0.5
+      },
+      "per_scenario": {
+        "handoff": 0.0,
+        "persistent": 0.0,
+        "recovery": 0.6666666666666666,
+        "recurrence": 0.6666666666666666
+      },
+      "mean_ingest_seconds": 1.6468778986666166,
+      "mean_probe_seconds": 1.034926627416591,
+      "peak_gpu_gib": 2.956294536590576,
+      "max_retained_kv_mib": 14.0
+    },
+    "sr_kv": {
+      "n": 12,
+      "accuracy": 0.4166666666666667,
+      "macro_f1": 0.3127272727272728,
+      "missed_alert_rate": 0.7,
+      "false_alert_rate": 0.0,
+      "wrong_service_rate": 0.0,
+      "invalid_rate": 0.0,
+      "per_checkpoint": {
+        "0": 0.5,
+        "1": 0.25,
+        "2": 0.5
+      },
+      "per_scenario": {
+        "handoff": 0.0,
+        "persistent": 0.3333333333333333,
+        "recovery": 0.3333333333333333,
+        "recurrence": 1.0
+      },
+      "mean_ingest_seconds": 1.6590332925833309,
+      "mean_probe_seconds": 0.9526399410000295,
+      "peak_gpu_gib": 2.956294536590576,
+      "max_retained_kv_mib": 14.0
+    }
+  },
+  "comparisons": {
+    "full": {
+      "difference": -0.08333333333333333,
+      "ci95": [
+        -0.25,
+        0.0
+      ],
+      "ci_adjusted": [
+        -0.25,
+        0.0
+      ]
+    },
+    "streaming_llm": {
+      "difference": 0.16666666666666669,
+      "ci95": [
+        0.0,
+        0.33333333333333337
+      ],
+      "ci_adjusted": [
+        0.0,
+        0.33333333333333337
+      ]
+    },
+    "snapkv_unified": {
+      "difference": 0.16666666666666669,
+      "ci95": [
+        0.0,
+        0.33333333333333337
+      ],
+      "ci_adjusted": [
+        0.0,
+        0.33333333333333337
+      ]
+    },
+    "recency_hard_evict": {
+      "difference": 0.0,
+      "ci95": [
+        0.0,
+        0.0
+      ],
+      "ci_adjusted": [
+        0.0,
+        0.0
+      ]
+    },
+    "centroid_merge": {
+      "difference": 0.08333333333333334,
+      "ci95": [
+        -0.16666666666666666,
+        0.33333333333333337
+      ],
+      "ci_adjusted": [
+        -0.25,
+        0.33333333333333337
+      ]
+    }
+  },
+  "exploratory_advantage": false,
+  "scope": "Synthetic incident lifecycle identification; not causal diagnosis or production validation."
+}

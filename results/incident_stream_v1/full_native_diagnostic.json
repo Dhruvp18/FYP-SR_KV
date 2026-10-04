@@ -1,0 +1,104 @@
+{
+  "records": [
+    {
+      "stream_id": 0,
+      "checkpoint": 0,
+      "expected": "database",
+      "predicted": "database",
+      "generated_text": "A) database: investigate database",
+      "incremental_predicted": "database"
+    },
+    {
+      "stream_id": 0,
+      "checkpoint": 1,
+      "expected": "payments",
+      "predicted": "NONE",
+      "generated_text": "E) NONE: no unresolved",
+      "incremental_predicted": "NONE"
+    },
+    {
+      "stream_id": 0,
+      "checkpoint": 2,
+      "expected": "auth",
+      "predicted": "NONE",
+      "generated_text": "E) NONE: no unresolved",
+      "incremental_predicted": "NONE"
+    },
+    {
+      "stream_id": 1,
+      "checkpoint": 0,
+      "expected": "queue",
+      "predicted": "NONE",
+      "generated_text": "E) NONE: no unresolved",
+      "incremental_predicted": "NONE"
+    },
+    {
+      "stream_id": 1,
+      "checkpoint": 1,
+      "expected": "database",
+      "predicted": "NONE",
+      "generated_text": "E) NONE: no unresolved",
+      "incremental_predicted": "NONE"
+    },
+    {
+      "stream_id": 1,
+      "checkpoint": 2,
+      "expected": "NONE",
+      "predicted": "NONE",
+      "generated_text": "E) NONE: no unresolved",
+      "incremental_predicted": "NONE"
+    },
+    {
+      "stream_id": 2,
+      "checkpoint": 0,
+      "expected": "payments",
+      "predicted": "payments",
+      "generated_text": "B) payments: investigate the",
+      "incremental_predicted": "payments"
+    },
+    {
+      "stream_id": 2,
+      "checkpoint": 1,
+      "expected": "NONE",
+      "predicted": "NONE",
+      "generated_text": "E) NONE: no unresolved",
+      "incremental_predicted": "NONE"
+    },
+    {
+      "stream_id": 2,
+      "checkpoint": 2,
+      "expected": "payments",
+      "predicted": "payments",
+      "generated_text": "B) Payments: investigate the",
+      "incremental_predicted": "payments"
+    },
+    {
+      "stream_id": 3,
+      "checkpoint": 0,
+      "expected": "database",
+      "predicted": "NONE",
+      "generated_text": "E) NONE: no unresolved",
+      "incremental_predicted": "NONE"
+    },
+    {
+      "stream_id": 3,
+      "checkpoint": 1,
+      "expected": "database",
+      "predicted": "database",
+      "generated_text": "A) database",
+      "incremental_predicted": "database"
+    },
+    {
+      "stream_id": 3,
+      "checkpoint": 2,
+      "expected": "queue",
+      "predicted": "NONE",
+      "generated_text": "E) NONE: no unresolved",
+      "incremental_predicted": "NONE"
+    }
+  ],
+  "correct": 6,
+  "agrees_with_incremental": 12,
+  "n": 12,
+  "scope": "Post-sanity native SDPA harness diagnostic"
+}
