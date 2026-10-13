@@ -1,0 +1,10 @@
+{
+  "pass": true,
+  "full_accuracy": 1.0,
+  "full_by_variant": {
+    "consensus_n1": 1.0,
+    "consensus_n3": 1.0,
+    "consensus_n5": 1.0
+  },
+  "records": 165
+}

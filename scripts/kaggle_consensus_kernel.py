@@ -204,11 +204,22 @@ def cmd_pull(args) -> int:
     results_dir.mkdir(parents=True, exist_ok=True)
     copied = 0
     for path in out_dir.rglob("*"):
-        if path.is_file() and path.suffix in (".jsonl", ".json") and "consensus_update_v1" in path.parts:
-            dest = results_dir / "consensus_update_v1" / path.name
-            dest.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy(path, dest)
-            copied += 1
+        if not (path.is_file() and path.suffix in (".jsonl", ".json")):
+            continue
+        parts = path.parts
+        if "consensus_update_v1" not in parts:
+            continue
+        # Preserve the path from consensus_update_v1 onward (same fix as
+        # kaggle_kernel.py's merge_outputs - flattening to just the basename
+        # let the repo's own committed sanity_v1_rejected_decoy/ record
+        # silently overwrite the live run's same-named file, because both
+        # cloned-repo history and fresh kernel output land under this same
+        # directory name. Confirmed happening on this pilot's first pull.
+        idx = parts.index("consensus_update_v1")
+        dest = results_dir / Path(*parts[idx:])
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy(path, dest)
+        copied += 1
     print(f"merged {copied} file(s) into results/consensus_update_v1/")
     return result.returncode
 

@@ -1,0 +1,13 @@
+{
+  "id": "chaitrasamant/sr-kv-consensus-update",
+  "title": "sr-kv-consensus-update",
+  "code_file": "sr-kv-consensus-update.ipynb",
+  "language": "python",
+  "kernel_type": "notebook",
+  "is_private": true,
+  "enable_gpu": true,
+  "enable_internet": true,
+  "dataset_sources": [],
+  "competition_sources": [],
+  "kernel_sources": []
+}
