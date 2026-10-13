@@ -1,0 +1,146 @@
+{
+  "summary": {
+    "full/b1.0": {
+      "n_conversations": 50,
+      "accuracy": 1.0,
+      "both_correct": 1.0,
+      "current_request": 1.0,
+      "old_constraint": 1.0,
+      "mean_seconds": 2.988966644889981,
+      "mean_compression_seconds": 0.0,
+      "peak_gpu_gib": 4.917342662811279
+    },
+    "recency_hard_evict/b0.3": {
+      "n_conversations": 50,
+      "accuracy": 0.79,
+      "both_correct": 0.64,
+      "current_request": 0.82,
+      "old_constraint": 0.76,
+      "mean_seconds": 3.247313579140009,
+      "mean_compression_seconds": 0.35023129139005504,
+      "peak_gpu_gib": 5.160402297973633
+    },
+    "recency_hard_evict/b0.4": {
+      "n_conversations": 50,
+      "accuracy": 0.91,
+      "both_correct": 0.82,
+      "current_request": 0.94,
+      "old_constraint": 0.88,
+      "mean_seconds": 3.2722486480699855,
+      "mean_compression_seconds": 0.36489586164036153,
+      "peak_gpu_gib": 5.171191215515137
+    },
+    "snapkv_unified/b0.3": {
+      "n_conversations": 50,
+      "accuracy": 0.93,
+      "both_correct": 0.86,
+      "current_request": 0.88,
+      "old_constraint": 0.98,
+      "mean_seconds": 3.2417518951799864,
+      "mean_compression_seconds": 0.3282969130502306,
+      "peak_gpu_gib": 5.160402297973633
+    },
+    "snapkv_unified/b0.4": {
+      "n_conversations": 50,
+      "accuracy": 0.98,
+      "both_correct": 0.96,
+      "current_request": 0.96,
+      "old_constraint": 1.0,
+      "mean_seconds": 3.2443221431100073,
+      "mean_compression_seconds": 0.33510083656996814,
+      "peak_gpu_gib": 5.171191215515137
+    },
+    "sr_kv/b0.3": {
+      "n_conversations": 50,
+      "accuracy": 0.88,
+      "both_correct": 0.76,
+      "current_request": 0.82,
+      "old_constraint": 0.94,
+      "mean_seconds": 4.178576448270051,
+      "mean_compression_seconds": 1.3343857166400859,
+      "peak_gpu_gib": 5.160402297973633
+    },
+    "sr_kv/b0.4": {
+      "n_conversations": 50,
+      "accuracy": 0.97,
+      "both_correct": 0.94,
+      "current_request": 0.94,
+      "old_constraint": 1.0,
+      "mean_seconds": 4.174494658569984,
+      "mean_compression_seconds": 1.3329859268007294,
+      "peak_gpu_gib": 5.171191215515137
+    },
+    "streaming_llm/b0.3": {
+      "n_conversations": 50,
+      "accuracy": 0.52,
+      "both_correct": 0.18,
+      "current_request": 0.76,
+      "old_constraint": 0.28,
+      "mean_seconds": 2.9569495517400126,
+      "mean_compression_seconds": 0.12728133208973533,
+      "peak_gpu_gib": 4.841794490814209
+    },
+    "streaming_llm/b0.4": {
+      "n_conversations": 50,
+      "accuracy": 0.62,
+      "both_correct": 0.24,
+      "current_request": 1.0,
+      "old_constraint": 0.24,
+      "mean_seconds": 2.9729510863800215,
+      "mean_compression_seconds": 0.13168270861967812,
+      "peak_gpu_gib": 4.852583408355713
+    }
+  },
+  "paired_comparisons": {
+    "sr_kv minus recency_hard_evict/b0.3": {
+      "n": 50,
+      "difference": 0.09,
+      "ci_low": 0.02,
+      "ci_high": 0.16
+    },
+    "sr_kv minus snapkv_unified/b0.3": {
+      "n": 50,
+      "difference": -0.05,
+      "ci_low": -0.09,
+      "ci_high": -0.01
+    },
+    "sr_kv minus streaming_llm/b0.3": {
+      "n": 50,
+      "difference": 0.36,
+      "ci_low": 0.29,
+      "ci_high": 0.43
+    },
+    "sr_kv minus full/b0.3": {
+      "n": 50,
+      "difference": -0.12,
+      "ci_low": -0.18,
+      "ci_high": -0.06
+    },
+    "sr_kv minus recency_hard_evict/b0.4": {
+      "n": 50,
+      "difference": 0.06,
+      "ci_low": 0.01,
+      "ci_high": 0.11
+    },
+    "sr_kv minus snapkv_unified/b0.4": {
+      "n": 50,
+      "difference": -0.01,
+      "ci_low": -0.04024999999999977,
+      "ci_high": 0.02
+    },
+    "sr_kv minus streaming_llm/b0.4": {
+      "n": 50,
+      "difference": 0.35,
+      "ci_low": 0.29,
+      "ci_high": 0.41
+    },
+    "sr_kv minus full/b0.4": {
+      "n": 50,
+      "difference": -0.03,
+      "ci_low": -0.07,
+      "ci_high": 0.0
+    }
+  },
+  "exploratory_encouragement": true,
+  "note": "Exploratory synthetic pilot; not evidence of general or production superiority."
+}

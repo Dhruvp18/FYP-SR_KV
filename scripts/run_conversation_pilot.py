@@ -34,8 +34,8 @@ def summarize(records):
     } for (m, b, v), rows in groups.items()}
 
 
-def check_records(records, n_samples):
-    expected = n_samples * 2 * 9
+def check_records(records, n_samples, budgets):
+    expected = n_samples * 2 * (1 + (len(METHODS) - 1) * len(budgets))
     if len(records) != expected:
         raise ValueError(f"Expected {expected} answers, found {len(records)}")
     for r in records:
@@ -58,7 +58,11 @@ def main(argv=None):
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--stage", choices=("sanity", "pilot"), required=True)
     p.add_argument("--output-dir", default="results/conversation_pilot_v1")
+    p.add_argument("--budgets", type=float, nargs="+", default=[0.1, 0.2])
     args = p.parse_args(argv)
+    budgets = tuple(args.budgets)
+    if not budgets or any(not 0 < b < 1 for b in budgets) or len(set(budgets)) != len(budgets):
+        raise ValueError("Budgets must be unique values strictly between 0 and 1")
     n, seed = (5, 260926) if args.stage == "sanity" else (50, 260927)
     out = Path(args.output_dir)
     out.mkdir(parents=True, exist_ok=True)
@@ -93,9 +97,9 @@ def main(argv=None):
         model(**warm)
     torch.cuda.synchronize()
     started = time.perf_counter()
-    total = n * 18
+    total = n * 2 * (1 + (len(METHODS) - 1) * len(budgets))
     for method in METHODS:
-        for budget in ([1.0] if method == "full" else [0.1, 0.2]):
+        for budget in ([1.0] if method == "full" else budgets):
             key = run_key(**metadata, method=method, budget=budget)
             for sample in samples:
                 if store.is_done(sample.task_id, key):
@@ -117,11 +121,12 @@ def main(argv=None):
                 done = len(store.records)
                 if done % 5 == 0:
                     print(f"[{args.stage}] {done}/{total} answers; {method} b={budget}; elapsed={time.perf_counter()-started:.1f}s", flush=True)
-    checks = check_records(store.records, n)
+    checks = check_records(store.records, n, budgets)
     store.finalize(metadata=metadata, summary=summarize(store.records))
     if args.stage == "sanity":
         passed = checks["full_accuracy"] >= 0.9 and min(checks["full_by_variant"].values()) >= 0.8
-        (out / "sanity_gate.json").write_text(json.dumps({"pass": passed, **checks}, indent=2))
+        (out / "sanity_gate.json").write_text(json.dumps(
+            {"pass": passed, "budgets": budgets, **checks}, indent=2))
         print("SANITY " + ("PASS" if passed else "STOP"), checks, flush=True)
         if not passed:
             return 2

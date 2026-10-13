@@ -1,0 +1,13 @@
+{
+  "last_success_utc": "2026-10-13T05:50:12Z",
+  "record_count": 900,
+  "pilot_answers": 900,
+  "pipeline": {
+    "stage": "analysis",
+    "state": "complete",
+    "budgets": [
+      0.3,
+      0.4
+    ]
+  }
+}

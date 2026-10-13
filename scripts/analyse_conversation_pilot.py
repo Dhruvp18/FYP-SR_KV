@@ -20,7 +20,7 @@ def paired_interval(treatment, control, *, seed=260928):
     return dict(n=len(ids), difference=float(d.mean()), ci_low=float(lo), ci_high=float(hi))
 
 
-def analyse(rows):
+def analyse(rows, budgets=(0.1, 0.2)):
     groups = defaultdict(list)
     identities = defaultdict(set)
     for row in rows:
@@ -49,7 +49,7 @@ def analyse(rows):
             peak_gpu_gib=max(r["max_memory_allocated"] for r in records) / 1024**3,
         )
     comparisons = {}
-    for budget in (0.1, 0.2):
+    for budget in budgets:
         treatment = conversation_scores.get(("sr_kv", budget))
         if treatment is None:
             continue
@@ -59,7 +59,7 @@ def analyse(rows):
             if control is not None:
                 comparisons[f"sr_kv minus {baseline}/b{budget}"] = paired_interval(treatment, control)
     encouraged = True
-    for b in (0.1, 0.2):
+    for b in budgets:
         c = comparisons.get(f"sr_kv minus recency_hard_evict/b{b}", {})
         a, ref = summary.get(f"sr_kv/b{b}", {}), summary.get(f"recency_hard_evict/b{b}", {})
         encouraged &= (c.get("n", 0) == 50 and c.get("ci_low", -1) > 0
@@ -72,9 +72,10 @@ def analyse(rows):
 def main():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("results", type=Path)
+    p.add_argument("--budgets", type=float, nargs="+", default=[0.1, 0.2])
     args = p.parse_args()
     rows = [json.loads(line) for line in args.results.read_text().splitlines() if line.strip()]
-    result = analyse(rows)
+    result = analyse(rows, args.budgets)
     path = args.results.with_name(args.results.stem + "_analysis.json")
     path.write_text(json.dumps(result, indent=2))
     print(json.dumps(result, indent=2))

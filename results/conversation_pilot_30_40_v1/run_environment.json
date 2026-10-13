@@ -1,0 +1,11 @@
+{
+  "python": "3.13",
+  "torch": "2.11.0+cu128",
+  "transformers": "5.16.1",
+  "gpu": "Tesla T4",
+  "pilot_dataset_sha256": "4e1d60496821b6c2a13f535dfcd7bf9f5cc795eea20077be5cad2a1196ca1da7",
+  "src_tree_sha256": "5c376f0633a63129ae906ba0290a6b8e377e6e19b56d0c53809cac63f184477b",
+  "previous_pilot_torch": "2.10.0+cu128",
+  "previous_pilot_transformers": "5.17.0",
+  "note": "The dataset and src tree hashes match the 10%/20% pilot; Python framework versions differ."
+}
