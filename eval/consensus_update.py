@@ -103,12 +103,20 @@ _REINFORCEMENT_TMPLS = (
     "Agent: For this ticket, the shipment is still set for your {new}.",
     "Agent: Reconfirming before dispatch: we have your {new} on file.",
 )
-#: one single, individually salient mention of the superseded address -
-#: phrased with urgency so a pure attention-score top-k pick has a real
-#: reason to favour it over any one (weaker, mundane) reinforcement.
+#: one single, individually salient mention of the superseded address.
+#: Deliberately framed as a past, explicitly-superseded fact ("before it was
+#: corrected") rather than a claimed override - an earlier version asserted
+#: the old address was current again ("disregard the update... after all"),
+#: which made the task genuinely ambiguous even for the uncompressed `full`
+#: reference (sanity run 2026-10-13: full scored 6/15 wrong, and every single
+#: wrong answer picked the decoy, zero picked an unrelated option - a sanity
+#: gate failure, not a caching effect). This version still puts the old
+#: address's string back into the late, budget-contested region for a hard-
+#: eviction policy's windowed-attention scoring to possibly misjudge, without
+#: asking any reader - compressed or not - to resolve a contradiction.
 _DECOY_TMPL = (
-    "Agent: URGENT CORRECTION - disregard the update, the {product} should "
-    "go to your {old} after all."
+    "Agent: For the record, I see a note that the original request had "
+    "listed your {old} before it was corrected."
 )
 
 #: reinforcements land across the back third of the passage; the decoy sits

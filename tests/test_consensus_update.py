@@ -50,14 +50,32 @@ def test_decoy_and_reinforcements_are_both_present_and_late(tokenizer):
                              variants=("consensus_n3",))
     for sample in samples:
         ctx = sample.context
-        assert "URGENT CORRECTION" in ctx
+        assert "before it was corrected" in ctx
         assert ctx.index("I need to correct") > ctx.index("Please send it")
-        assert ctx.index("URGENT CORRECTION") > ctx.index("I need to correct")
+        assert ctx.index("before it was corrected") > ctx.index("I need to correct")
         # three distinct reinforcement sentences, each mentioning new_destination
         reinforcement_mentions = ctx.count(sample.new_destination)
         # new_destination appears once in the correction line itself plus
         # once per reinforcement
         assert reinforcement_mentions >= sample.n_reinforcements
+
+
+def test_decoy_never_claims_the_old_address_is_still_current(tokenizer):
+    """Regression test for the 2026-10-13 sanity failure: an earlier decoy
+    wording ("disregard the update... after all") made the task genuinely
+    ambiguous even for the uncompressed `full` reference - every one of its
+    wrong answers picked the decoy, not a random option, because the decoy
+    explicitly claimed to override the real correction. The decoy must only
+    ever describe the old address as a superseded, past fact.
+    """
+    samples = build_samples(tokenizer, context_len=2048, n_samples=5)
+    for sample in samples:
+        ctx = sample.context.lower()
+        for phrase in ("after all", "disregard the update", "actually",
+                       "take priority", "override"):
+            assert phrase not in ctx, (
+                f"decoy wording reintroduced an override claim: {phrase!r}"
+            )
 
 
 def test_dataset_is_stable_when_sample_count_changes(tokenizer):
